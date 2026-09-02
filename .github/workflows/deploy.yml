@@ -28,7 +28,7 @@ jobs:
       - name: Build for Pages
         run: npm run build
         env:
-          # Project sites are served from https://<owner>.github.io/<repo>/
+          # Project sites are served under /<repo>/ (here https://mball.co/gateway-map/)
           BASE_PATH: /${{ github.event.repository.name }}/
       - uses: actions/upload-pages-artifact@v3
         with:
