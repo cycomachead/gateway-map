@@ -23,8 +23,9 @@ npm run test:a11y  # just the axe accessibility scans
   Playwright end-to-end tests including axe-core accessibility scans (WCAG 2.1 AA + best
   practices). Any axe violation fails the build; the report is uploaded as an artifact.
 - `.github/workflows/deploy.yml` builds on pushes to `main` and publishes `dist/` to
-  GitHub Pages at `https://cycomachead.github.io/gateway-map/`. It sets `BASE_PATH` so
-  asset URLs work under the repository sub-path.
+  GitHub Pages at `https://mball.co/gateway-map/`. The user site carries the custom
+  domain and project sites inherit it, so the build still sets `BASE_PATH` to
+  `/gateway-map/` for asset URLs. No `CNAME` file is needed in this repo.
 - One-time setup: in the repository settings, under **Pages**, set **Source** to
   **GitHub Actions**.
 
