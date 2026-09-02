@@ -39,12 +39,14 @@ Each step should leave `main` in a working, deployable state.
 
 ### 2. Data model  ✅ (prototype)
 - `src/data/types.ts`: `Building`, `Floor`, `Space`, `Poi`, `SpaceCategory`.
-- `src/data/building.ts`: sample data for a few floors with rooms drawn as SVG
-  polygons in a shared coordinate system.
+- `src/data/building.ts`: sample data for a few floors with rooms drawn in a shared
+  coordinate system. Outlines are polylines whose edges can be circular arcs
+  (DXF-style `bulge` on a vertex), so curved facades and round rooms are first-class.
 - Validation helper that checks ids are unique and polygons are well-formed.
 
 ### 3. Map rendering  ✅ (prototype)
 - `src/map/render.ts`: render a floor as SVG (`<g>` per space, labels, POI markers).
+  Shapes are `<path>`s with true arcs; `flatten()` gives a polygon for bbox/centroid math.
 - Floor switcher control.
 - Category-based colouring via CSS classes.
 
@@ -66,11 +68,18 @@ Each step should leave `main` in a working, deployable state.
 - Reduced-motion support; colour contrast checks.
 - Mobile layout: panel becomes a bottom sheet.
 
-### 8. Real content
-- Replace sample geometry with traced floor plans (SVG export from CAD/Illustrator,
-  cleaned and keyed by space id).
+### 8. Real content  🔶 (Level 4 done from wayfinding signs)
+- Level 4 is traced from photos of the building's wayfinding signs: the whole-floor
+  sign for the outline and cores, the Northeast/Southwest detail signs for rooms.
+  Perimeter rooms are defined relative to named outline walls (span + depth), so they
+  always coincide with the outline; interior rooms are traced in each sign's pixel space
+  and mapped onto the floor with an affine fit (`src/data/helpers.ts`).
+- Remaining floors: trace from the images in `floorplans/` the same way (outline first,
+  then rooms per wing). The permit-set PDF (sheet TA1.100A, lower level) is the most
+  precise source for the ground/lower levels.
 - Fill in room metadata (names, departments, capacity, hours, photos).
-- Add a `scripts/` importer if source data is a spreadsheet.
+- Consider a small tracing tool (click corners on the photo → polygon JSON) once more
+  than two floors need updating.
 
 ### 9. Quality & delivery
 - Vitest unit tests for data validation, search, and geometry helpers.
