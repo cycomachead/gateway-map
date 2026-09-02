@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="Interactive map of the Gateway building: find rooms, labs, and services by floor." />
+    <title>Gateway Map</title>
+  </head>
+  <body>
+    <div class="app">
+      <header class="topbar">
+        <h1 class="brand">
+          <span class="brand__mark" aria-hidden="true"></span>
+          <span>Gateway Map</span>
+        </h1>
+        <div id="search" class="topbar__search"></div>
+        <div id="filters" class="chips"></div>
+      </header>
+
+      <main class="stage">
+        <svg id="map" class="map" role="application" aria-label="Floor plan" preserveAspectRatio="xMidYMid meet"></svg>
+
+        <div class="controls controls--floors" id="floors"></div>
+        <div class="controls controls--zoom">
+          <button type="button" id="zoom-in" class="ctl" aria-label="Zoom in">+</button>
+          <button type="button" id="zoom-out" class="ctl" aria-label="Zoom out">−</button>
+          <button type="button" id="zoom-fit" class="ctl" aria-label="Fit floor to view">⤢</button>
+        </div>
+
+        <div id="tooltip" class="tooltip" role="status" hidden></div>
+      </main>
+
+      <aside id="panel" class="panel" aria-live="polite"></aside>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
