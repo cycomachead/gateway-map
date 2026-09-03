@@ -72,6 +72,7 @@ function renderPoi(poi: Poi): SVGGElement {
 export function renderFloor(building: Building, floor: Floor): SVGGElement {
   const root = el('g', { class: 'floor', 'data-floor-id': floor.id });
   root.appendChild(el('path', { d: toPath(floor.outline), class: 'floor__outline' }));
+  for (const island of floor.islands ?? []) root.appendChild(el('path', { d: toPath(island), class: 'floor__outline' }));
 
   const spaces = el('g', { class: 'spaces' });
   for (const s of building.spaces) if (s.floorId === floor.id) spaces.appendChild(renderSpace(s));

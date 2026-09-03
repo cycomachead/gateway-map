@@ -42,7 +42,8 @@ function mountFloor(floorId: string) {
 }
 
 function fitFloor(floor: Floor) {
-  panzoom.fit(pad(bbox(floor.outline), 24));
+  // Fit the whole footprint, including detached blocks (e.g. Level 1's Southwest block).
+  panzoom.fit(pad(bbox([floor.outline, ...(floor.islands ?? [])].flat()), 24));
 }
 
 function syncSpaceClasses(selectedId: string | null, categories: Set<string>) {
