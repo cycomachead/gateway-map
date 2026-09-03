@@ -107,6 +107,8 @@ export interface Floor {
   width: number;
   height: number;
   outline: Point[];
+  /** Additional separate footprints on this floor (e.g. a detached ground-floor block). */
+  islands?: Point[][];
 }
 
 export interface Building {

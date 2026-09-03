@@ -26,8 +26,8 @@ test('floor overview has no axe violations', async ({ page }) => {
 });
 
 test('room details panel has no axe violations', async ({ page }) => {
-  await page.locator('[data-space-id="4-4161"] .space__shape').click();
-  await expect(page.locator('#panel h2')).toHaveText('Meeting Room 4161');
+  await page.locator('[data-space-id="1-1171"] .space__shape').click();
+  await expect(page.locator('#panel h2')).toHaveText('Meeting Room 1171');
   await expectNoViolations(page, 'room selected');
 });
 
@@ -44,6 +44,6 @@ test('active filter has no axe violations', async ({ page }) => {
 
 test('dark colour scheme has no axe violations', async ({ page }) => {
   await page.emulateMedia({ colorScheme: 'dark' });
-  await page.locator('[data-space-id="4-4355"] .space__shape').click();
+  await page.locator('[data-space-id="1-1210"] .space__shape').click();
   await expectNoViolations(page, 'dark mode');
 });

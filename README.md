@@ -31,16 +31,27 @@ npm run test:a11y  # just the axe accessibility scans
 
 ## Editing the map
 
-- Floors, spaces, and points of interest live in `src/data/building.ts`.
-- Level 4 is traced from the wayfinding signs. The outline uses the whole-floor sign's
-  pixel coordinates (2000×1057). Rooms are written in the pixel coordinates of the
-  Northeast / Southwest detail signs and mapped onto the floor with an affine transform
-  fitted on matching corners, so you can refine a wing by re-reading only its sign.
-- The outline is built from named wall segments. Rooms on the perimeter are defined as a
-  span along a wall (`t0..t1` fractions) plus a depth, via `rowOffWall`, `offWall` and
-  `cornerRoom` in `src/data/helpers.ts`, so their outer edge is exactly the outline and
-  neighbours share dividing edges. Interior rooms are traced polygons.
-- Outline edges are straight by default; add `bulge` to a vertex to make the edge to the
-  next vertex a circular arc (`bulge = tan(θ/4)`, 1 = semicircle, sign picks the side).
-  Two vertices with `bulge: 1` make a circle. See helpers in `src/data/building.ts`.
+- Floors, spaces, and points of interest are assembled in `src/data/building.ts`; the
+  per-floor data lives in `src/data/gateway/`.
+- All floors share one coordinate frame and one set of outline vertices
+  (`src/data/gateway/outline.ts`), so exterior walls line up exactly when switching floors.
+  The vertices were fitted from the perspective-corrected whole-floor signs of Levels 2 and 3:
+  straight walls are least-squares lines, corners are their intersections, curved walls are
+  circular arcs (`bulge` on a vertex, `bulge = tan(θ/4)`, 1 = semicircle, sign picks the side).
+  Level 2 has its own outline (deep entrance notch); Level 1 has its own outline plus a
+  detached Southwest block (`islands` on the floor).
+- **Levels 1–3 are generated** (`level1.ts`, `level2.ts`, `level3.ts`) by
+  `tools/trace_signs/` from the sign photos: each photo is perspective-corrected using the
+  four corners of the sign panel (`floorplans/*.jpg` are the corrected images), rooms are
+  segmented from the detail signs by colour and divider lines, the wing is warped onto the
+  shared outline (affine + thin-plate spline fitted along the walls), and perimeter vertices
+  are snapped onto the outline walls. Room numbers and special rooms are assigned in
+  `tools/trace_signs/labels.py`. To change a generated room, edit the label tables and rerun
+  `python3 gen.py && python3 emit_ts.py` (needs `numpy`, `opencv-python-headless`, `scipy`),
+  or edit the `.ts` file directly if you don't need to regenerate.
+- **Level 4 is hand-traced** (`level4.ts`): perimeter rooms are defined as a span along a
+  named wall (`t0..t1` fractions) plus a depth, via `rowOffWall`, `offWall` and `cornerRoom`
+  in `src/data/helpers.ts`, so their outer edge is exactly the outline; interior rooms are
+  traced in the detail signs' pixel coordinates and mapped with an affine fitted on the wing
+  corners.
 - Run the app; data problems (duplicate ids, unknown floors) are logged to the console.
