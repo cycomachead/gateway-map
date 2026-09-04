@@ -1,5 +1,5 @@
 import './style.css';
-import { building } from './data/building';
+import { building, DEFAULT_FLOOR_ID } from './data/building';
 import type { Floor } from './data/types';
 import { validateBuilding } from './data/validate';
 import { bbox, pad } from './map/geometry';
@@ -17,10 +17,9 @@ if (problems.length) console.error('Building data problems:\n' + problems.join('
 const $ = <T extends HTMLElement>(sel: string) => document.querySelector<T>(sel)!;
 
 const svg = $<HTMLElement>('#map') as unknown as SVGSVGElement;
-const groundFloor = [...building.floors].sort((a, b) => a.level - b.level)[0];
 
 const store = createStore({
-  floorId: groundFloor.id,
+  floorId: building.floors.some((f) => f.id === DEFAULT_FLOOR_ID) ? DEFAULT_FLOOR_ID : building.floors[0].id,
   selectedSpaceId: null,
   hoveredSpaceId: null,
   query: '',
