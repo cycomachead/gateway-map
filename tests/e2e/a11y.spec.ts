@@ -27,7 +27,7 @@ test('floor overview has no axe violations', async ({ page }) => {
 
 test('room details panel has no axe violations', async ({ page }) => {
   await page.locator('[data-space-id="1-1171"] .space__shape').click();
-  await expect(page.locator('#panel h2')).toHaveText('Meeting Room 1171');
+  await expect(page.locator('#panel h2')).toHaveText('Small Meeting Room 1171');
   await expectNoViolations(page, 'room selected');
 });
 

@@ -68,17 +68,18 @@ Each step should leave `main` in a working, deployable state.
 - Reduced-motion support; colour contrast checks.
 - Mobile layout: panel becomes a bottom sheet.
 
-### 8. Real content  🔶 (Levels 1–4 done from wayfinding signs)
-- Every floor shares one outline (`src/data/gateway/outline.ts`) fitted from the
-  perspective-corrected whole-floor signs, so exterior walls coincide across floors.
-- Levels 1, 2 and 3 are generated from photos of the detail signs by `tools/trace_signs/`
-  (perspective correction from the sign's four corners → colour/divider segmentation →
-  warp onto the shared outline → snap perimeter vertices to the walls). The corrected sign
-  images are kept in `floorplans/`. Level 4 remains hand-traced in the same frame.
-- Known gaps: no Level 1 Southwest detail sign exists, so that block only has its cores and
-  two unlabelled rooms; a few small rooms on Levels 2/3 carry no number on the signs and are
-  stored as "Unlabelled room"; the Level 2 paper plan was only used as a visual cross-check.
-- Fill in room metadata (names, departments, capacity, hours, photos).
+### 8. Real content  ✅ (all levels from the CAD plans)
+- Every level (Lower Level, 1–5) is generated from the CAD plan-view PDFs by
+  `tools/trace_cad/`: rooms are flood-filled from the plan's room labels, open areas are
+  partitioned between their labels, the outline is the exterior wall, and all floors share
+  one coordinate frame (the Lower Level sheet is registered via the elevator shafts).
+- Room names and categories come from the plan (faculty office, focus, huddle, meeting,
+  lab, open office, piazza, social kitchen ...); stairs, elevators, restrooms, the atrium and
+  the lecture hall are named by hand in `tools/trace_cad/floors.py`.
+- Known gaps: the Lower Level plan only numbers a handful of rooms (the rest are unnamed
+  regions); a few labels whose door could not be matched are stored as open areas; open-area
+  boundaries are an approximation (nearest label), not walls.
+- Fill in room metadata (departments, capacity, hours, photos).
 
 ### 9. Quality & delivery
 - Vitest unit tests for data validation, search, and geometry helpers.

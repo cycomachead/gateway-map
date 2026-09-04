@@ -27,3 +27,6 @@ dist-ssr
 playwright-report
 test-results
 blob-report
+
+# Python tooling
+__pycache__/
