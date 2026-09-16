@@ -33,7 +33,8 @@ function renderSpace(space: Space): SVGGElement {
     role: 'button',
     'aria-label': space.name,
   });
-  g.appendChild(el('path', { d: toPath(space.polygon), class: 'space__shape' }));
+  const d = [space.polygon, ...(space.holes ?? [])].map(toPath).join(' ');
+  g.appendChild(el('path', { d, class: 'space__shape' }));
 
   const c = centroid(space.polygon);
   const label = el('text', {
@@ -73,6 +74,13 @@ export function renderFloor(building: Building, floor: Floor): SVGGElement {
   const root = el('g', { class: 'floor', 'data-floor-id': floor.id });
   root.appendChild(el('path', { d: toPath(floor.outline), class: 'floor__outline' }));
   for (const island of floor.islands ?? []) root.appendChild(el('path', { d: toPath(island), class: 'floor__outline' }));
+
+  // Furniture sits under the (translucent) spaces so it never hides a label or takes a click.
+  if (floor.desks?.length) {
+    const furniture = el('g', { class: 'furniture', 'aria-hidden': 'true' });
+    for (const desk of floor.desks) furniture.appendChild(el('path', { d: toPath(desk), class: 'desk' }));
+    root.appendChild(furniture);
+  }
 
   const spaces = el('g', { class: 'spaces' });
   for (const s of building.spaces) if (s.floorId === floor.id) spaces.appendChild(renderSpace(s));

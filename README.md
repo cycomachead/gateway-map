@@ -37,7 +37,10 @@ npm run test:a11y  # just the axe accessibility scans
   Floor_*.pdf`, the One Workplace furniture plans) by `tools/trace_cad/`: the vector line work
   is rasterised, each room is flood-filled from its label on the plan (seeded through the
   door swing when the label sits in the corridor), open areas are partitioned between their
-  labels, and the outline is the exterior wall. All floors are drawn in one coordinate frame
+  labels, desks in the open areas are exported as plain rectangles, and the outline is the
+  exterior wall. Doorways count as part of their room, walls are straightened, curves are
+  circular arcs (a third value on a vertex is the edge's bulge), and spaces are reconciled so
+  they touch without overlapping. All floors are drawn in one coordinate frame
   (the PDF point grid of the upper-floor sheets; the Lower Level sheet is registered onto it
   via the elevator shafts), so walls and cores line up exactly when switching floors.
 - Rooms the plan does not number (stairs, elevators, restrooms, the atrium, the lecture
@@ -45,7 +48,10 @@ npm run test:a11y  # just the axe accessibility scans
   categories and display names. To change a generated room, edit that file and rerun
   `python3 gen.py <pdf dir> <workdir> && python3 emit_ts.py <workdir> ../../src/data/gateway`
   (see `tools/trace_cad/README.md`), or edit the `.ts` file directly if you don't need to
-  regenerate.
-- `floorplans/` keeps the perspective-corrected photos of the wayfinding signs that the first
-  version of the map was traced from; they are a handy cross-check for room names.
+  regenerate. A single floor can be regenerated on its own: `gen.py <pdf dir> <workdir> 4` then
+  `emit_ts.py` keeps the shared frame from `frame.ts`.
+- `floorplans/` keeps the perspective-corrected photos of the wayfinding signs. The tracer
+  registers a floor's sign onto the CAD outline and takes the piazzas' shape from it (the
+  white band around the atrium on the sign), so those sweeping curves match the signs; the
+  photos are also a handy cross-check for room names.
 - Run the app; data problems (duplicate ids, unknown floors) are logged to the console.

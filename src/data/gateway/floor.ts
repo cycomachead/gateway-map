@@ -8,6 +8,7 @@ export type RoomExtra = {
   label?: string;
   description?: string;
   tags?: string[];
+  holes?: XY[][];
 };
 
 /**
@@ -38,6 +39,7 @@ export function makeSpace(floorId: string, wing: Wing | undefined, id: string, c
     category,
     wing,
     polygon: pts(polygon),
+    ...(extra.holes?.length ? { holes: extra.holes.map(pts) } : {}),
     description: extra.description,
     tags: [...(wing ? [wing.toLowerCase()] : []), ...(number ? [number] : []), ...(extra.tags ?? [])],
   };
