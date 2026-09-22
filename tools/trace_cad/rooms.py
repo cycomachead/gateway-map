@@ -588,6 +588,7 @@ def _xy(poly):
 
 
 MIN_ARC_R = 40.0   # px; tighter circles are jagged corners, not curved walls
+WALL = 10.0        # px; exterior wall thickness: a room's outer wall sits this far inside the outline
 CURVE_SAG = 1.5    # px; a "straight" run bowing more than this is a curved wall
 LOOSE_ARC = 2.5    # px; a whole curved run may be one arc within this rather than kinked pieces
 LONG_WALL = 120.0  # px; only a wall this long can refuse a corner fit for being curved
@@ -631,7 +632,7 @@ def _fit_arcs(pts, tol, loose=True):
     return _fit_arcs(pts[:k + 1], tol, loose=False) + _fit_arcs(pts[k:], tol, loose=False)
 
 
-def arcify(poly, tol=1.0, short=90.0, max_turn=40.0, min_run=3, fixed=None):
+def arcify(poly, tol=1.0, short=90.0, max_turn=40.0, min_run=3, fixed=None, loose=True, breaks=None):
     """Replace each run of gently turning edges (a curve traced as a polyline) by circular
     arcs. Points on the result may carry a third value, the DXF-style bulge of the edge that
     starts there (tan of a quarter of the included angle, positive when the arc bows to the
@@ -650,7 +651,8 @@ def arcify(poly, tol=1.0, short=90.0, max_turn=40.0, min_run=3, fixed=None):
     is_short = (L <= short) & ((turn_before <= max_turn) | (turn_after <= max_turn)) & (turn_before + turn_after <= 2 * max_turn + 90)
     if fixed is not None:
         is_short &= ~np.asarray(fixed, bool)
-    if is_short.all() and (turn_before <= max_turn).all():  # a closed curve: two runs from an arbitrary start
+    breaks = np.zeros(n, bool) if breaks is None else np.asarray(breaks, bool)
+    if is_short.all() and (turn_before <= max_turn).all() and not breaks.any():  # a closed curve: two runs from an arbitrary start
         h = n // 2
         return _fit_arcs(P[:h + 1], tol) + _fit_arcs(np.vstack([P[h:], P[:1]]), tol)
     if is_short.all():
@@ -660,6 +662,7 @@ def arcify(poly, tol=1.0, short=90.0, max_turn=40.0, min_run=3, fixed=None):
     P = np.roll(P, -start, axis=0)
     is_short = np.roll(is_short, -start)
     turn_before = np.roll(turn_before, -start)
+    breaks = np.roll(breaks, -start)
     out = []
     i = 0
     while i < n:
@@ -668,11 +671,11 @@ def arcify(poly, tol=1.0, short=90.0, max_turn=40.0, min_run=3, fixed=None):
             i += 1
             continue
         j = i
-        while j < n and is_short[j] and (j == i or turn_before[j] <= max_turn):
+        while j < n and is_short[j] and (j == i or (turn_before[j] <= max_turn and not breaks[j])):
             j += 1
         if j - i >= min_run:
             run = np.vstack([P[i:j], P[j % n:j % n + 1]])
-            out.extend(_fit_arcs(run, tol))
+            out.extend(_fit_arcs(run, tol, loose=loose))
         else:
             out.extend([[round(float(x), 1), round(float(y), 1)] for x, y in P[i:j]])
         i = j
@@ -690,7 +693,7 @@ def _arc_circle(p, q, b):
     return centre, R
 
 
-def arcify_all(polys, n_straight=0, near=8.0, refit_small=0.0, **kw):
+def arcify_all(polys, n_straight=0, near=8.0, refit_small=0.0, near_existing=14.0, **kw):
     """arcify every polygon of the list (in place). Where a polygon runs along a curve an
     earlier polygon already holds as an arc, it adopts that arc (the same circle, traversed
     the other way), so the two sides coincide; edges lying on an earlier polygon's boundary
@@ -705,7 +708,23 @@ def arcify_all(polys, n_straight=0, near=8.0, refit_small=0.0, **kw):
         if n < 4:
             continue
         x0, y0, x1, y1 = bounds[i]
-        existing = {(round(float(p[0]), 1), round(float(p[1]), 1)): p[2] for p in poly if len(p) == 3 and p[2] and abs(p[2]) >= refit_small}
+        existing = {(round(float(p[0]), 1), round(float(p[1]), 1)): p[2] for p in poly if len(p) == 3 and p[2]}
+        # an arc the polygon already carries that runs along an earlier arc (a kitchen's
+        # curved wall on the facade) takes that arc's circle, so the two coincide
+        for k_, p in enumerate(poly):
+            if len(p) < 3 or not p[2]:
+                continue
+            a = np.array(p[:2], float)
+            b = np.array(poly[(k_ + 1) % len(poly)][:2], float)
+            for pa, qa, ba in arcs_done:
+                centre, R = _arc_circle(pa, qa, ba)
+                # the room's wall is the inner face, a wall thickness inside the facade line
+                if abs(np.linalg.norm(a - centre) - R) <= near_existing and abs(np.linalg.norm(b - centre) - R) <= near_existing:
+                    chord = np.linalg.norm(b - a)
+                    theta = 2 * np.arcsin(min(chord / (2 * R), 1.0))
+                    existing[(round(float(a[0]), 1), round(float(a[1]), 1))] = float(np.sign(p[2]) * np.tan(theta / 4))
+                    break
+        keep_fixed = {k for k, b in existing.items() if abs(b) >= refit_small}
         # adopt the arcs of earlier polygons along this one: every chain of vertices lying on
         # such a circle, within its sweep, collapses to one edge on the same circle
         adopted = {}
@@ -757,25 +776,30 @@ def arcify_all(polys, n_straight=0, near=8.0, refit_small=0.0, **kw):
                 n_right = np.array([-d[1], d[0]]) / c
                 side = -np.sign(np.dot(centre - (P[a] + P[z]) / 2, n_right)) or 1.0
                 adopted[a] = ((z - a) % n, float(side * np.tan(theta / 4)))
+        # an inflection (the edge before bows one way, the edge after the other, both
+        # clearly) is a real vertex: no arc run continues through it
+        sag = np.array([_sagitta(poly[k_], poly[(k_ + 1) % n]) for k_ in range(n)])
+        bul = np.array([p[2] if len(p) == 3 and p[2] else 0.0 for p in poly])
+        inflection = {k_ for k_ in range(n) if bul[k_ - 1] * bul[k_] < 0 and min(sag[k_ - 1], sag[k_]) > 2.0}
         # rebuild the vertex list with the adopted arcs collapsed to single edges
         keep = []
         j = 0
         while j < n:
             if j in adopted:
                 steps, bulge = adopted[j]
-                keep.append((P[j], bulge, True))
+                keep.append((P[j], bulge, True, j))
                 j += steps
                 if j >= n:
                     break
             else:
-                keep.append((P[j], None, False))
+                keep.append((P[j], None, False, j))
                 j += 1
         if keep and np.allclose(keep[0][0], keep[-1][0]) and len(keep) > 1:
             keep.pop()
         P2 = np.array([k[0] for k in keep])
         fixed = np.array([k[2] for k in keep], bool)
         for k_, kp in enumerate(keep):  # arcs the polygon already carries stay as they are
-            if (round(float(kp[0][0]), 1), round(float(kp[0][1]), 1)) in existing:
+            if (round(float(kp[0][0]), 1), round(float(kp[0][1]), 1)) in keep_fixed:
                 fixed[k_] = True
         # edges lying on an earlier polygon's boundary stay straight
         others = [(shapes[j].boundary, 6.0 if j < n_straight else 0.3) for j in range(i) if not (bounds[j][2] < x0 - 6 or bounds[j][0] > x1 + 6 or bounds[j][3] < y0 - 6 or bounds[j][1] > y1 + 6)]
@@ -784,7 +808,8 @@ def arcify_all(polys, n_straight=0, near=8.0, refit_small=0.0, **kw):
         for b, tol_b in others:
             d = np.max([shapely.distance(shapely.points(P2), b), shapely.distance(shapely.points(Q), b), shapely.distance(shapely.points(M), b)], axis=0)
             fixed |= d < tol_b
-        out = arcify([[float(x), float(y)] for x, y in P2], fixed=fixed, **kw)
+        brk = np.array([k[3] in inflection for k in keep], bool)
+        out = arcify([[float(x), float(y)] for x, y in P2], fixed=fixed, breaks=brk, **kw)
         # put the adopted bulges back (arcify keeps fixed edges as plain points)
         want = {(round(float(k[0][0]), 1), round(float(k[0][1]), 1)): k[1] for k in keep if k[2] and k[1] is not None}
         want.update(existing)
@@ -799,11 +824,17 @@ def arcify_all(polys, n_straight=0, near=8.0, refit_small=0.0, **kw):
                 arcs_done.append((np.array(pt[:2], float), np.array(nxt[:2], float), pt[2]))
 
 
-def merge_collinear(poly, max_turn=15.0, max_dev=5.0, flat=0.06):
+def _sagitta(p, q):
+    """How far the arc edge starting at p (with a bulge) bows away from its chord to q."""
+    return abs(p[2]) * np.hypot(q[0] - p[0], q[1] - p[1]) / 2 if len(p) == 3 and p[2] else 0.0
+
+
+def merge_collinear(poly, max_turn=15.0, max_dev=5.0, flat_sag=3.0):
     """Collapse chains of nearly collinear edges into one straight edge: a vertex between two
     (nearly) straight edges that turns little and lies close to the chord of its neighbours
     is dropped, repeatedly. A curtain wall traced as a zigzag of mullion ticks becomes one
-    line, while a real curve (an arc with a bulge above `flat`) is left alone."""
+    line, while a real curve (an arc bowing more than `flat_sag` px) is left alone: a long
+    facade with a subtle curve bows a lot over its length even though its bulge is small."""
     pts = [list(p) for p in poly]
     changed = True
     while changed and len(pts) > 3:
@@ -811,7 +842,10 @@ def merge_collinear(poly, max_turn=15.0, max_dev=5.0, flat=0.06):
         n = len(pts)
         for i in range(n):
             a, b, c = pts[i - 1], pts[i], pts[(i + 1) % n]
-            if (len(a) == 3 and abs(a[2]) > flat) or (len(b) == 3 and abs(b[2]) > flat):
+            if _sagitta(a, b) > flat_sag or _sagitta(b, c) > flat_sag:
+                continue
+            # an inflection (a bump beside a recess, both bowing clearly) is a real vertex
+            if len(a) == 3 and len(b) == 3 and a[2] * b[2] < 0 and min(_sagitta(a, b), _sagitta(b, c)) > 2.0:
                 continue
             d1 = np.array(b[:2]) - np.array(a[:2])
             d2 = np.array(c[:2]) - np.array(b[:2])
@@ -829,6 +863,164 @@ def merge_collinear(poly, max_turn=15.0, max_dev=5.0, flat=0.06):
                 changed = True
                 break
     return pts
+
+
+def flatten_arcs(poly, step_deg=5.0):
+    """Vertices with each arc edge densified into short chords."""
+    out = []
+    n = len(poly)
+    for i, p in enumerate(poly):
+        out.append([float(p[0]), float(p[1])])
+        if len(p) < 3 or not p[2]:
+            continue
+        q = poly[(i + 1) % n]
+        a, b = np.array(p[:2], float), np.array(q[:2], float)
+        if np.linalg.norm(b - a) < 1e-9:
+            continue
+        centre, R = _arc_circle(a, b, p[2])
+        a0 = np.arctan2(a[1] - centre[1], a[0] - centre[0])
+        a1 = np.arctan2(b[1] - centre[1], b[0] - centre[0])
+        sweep = (a1 - a0 + np.pi) % (2 * np.pi) - np.pi
+        theta = 4 * np.arctan(abs(p[2]))
+        if abs(abs(sweep) - theta) > 1e-6:  # the long way round
+            sweep = sweep - np.sign(sweep) * 2 * np.pi
+        steps = max(2, int(abs(sweep) / np.radians(step_deg)))
+        for k in range(1, steps):
+            t = a0 + sweep * k / steps
+            out.append([float(centre[0] + R * np.cos(t)), float(centre[1] + R * np.sin(t))])
+    return out
+
+
+def _edge_samples(poly, i, step=2.0):
+    """Points every `step` px along edge i of a polygon (arc edges follow their circle)."""
+    p, q = poly[i], poly[(i + 1) % len(poly)]
+    a, b = np.array(p[:2], float), np.array(q[:2], float)
+    n = max(2, int(np.linalg.norm(b - a) / step))
+    if len(p) < 3 or not p[2]:
+        return a + (b - a) * np.linspace(0, 1, n)[:, None]
+    centre, R = _arc_circle(a, b, p[2])
+    a0 = np.arctan2(a[1] - centre[1], a[0] - centre[0])
+    a1 = np.arctan2(b[1] - centre[1], b[0] - centre[0])
+    sweep = (a1 - a0 + np.pi) % (2 * np.pi) - np.pi
+    theta = 4 * np.arctan(abs(p[2]))
+    if abs(abs(sweep) - theta) > 1e-6:
+        sweep = sweep - np.sign(sweep) * 2 * np.pi
+    t = a0 + sweep * np.linspace(0, 1, n)
+    return np.column_stack([centre[0] + R * np.cos(t), centre[1] + R * np.sin(t)])
+
+
+def outline_follow_rooms(outline, rooms_polys, reach=20.0):
+    """Where an enclosed room has a curved exterior wall (its arc's both ends within `reach`
+    of the outline), the outline takes that arc, pushed outward by the wall thickness, between
+    the points nearest the room's corners; whatever the outline had there (an arc fitted
+    through too few vertices, or a chain of pieces) is replaced, and the remainders of any
+    split edges become straight. Returns the number of stretches replaced."""
+    done = 0
+    for room in rooms_polys:
+        m = len(room)
+        for k in range(m):
+            p, q = room[k], room[(k + 1) % m]
+            if len(p) < 3 or not p[2] or abs(p[2]) < 0.03:
+                continue
+            a, b = np.array(p[:2], float), np.array(q[:2], float)
+            if abs(p[2]) * np.linalg.norm(b - a) / 2 < 12.0:  # a slight bow is not a bay
+                continue
+            # nearest points on the outline to the room's corners
+            best = []
+            for corner in (a, b):
+                hit = None
+                for i in range(len(outline)):
+                    S = _edge_samples(outline, i)
+                    d = np.linalg.norm(S - corner, axis=1)
+                    j = int(d.argmin())
+                    if hit is None or d[j] < hit[0]:
+                        hit = (float(d[j]), i, S[j])
+                best.append(hit)
+            if any(h[0] > reach for h in best):
+                continue
+            (da, ia, pa), (db, ib, pb) = best
+            # the outline's arc is concentric with the room's, at the radius of the exterior
+            # face; its ends are the room's corners projected radially onto that circle
+            centre, R = _arc_circle(a, b, p[2])
+            # the exterior face lies on the far side of the wall from the room's interior
+            inside_toward_centre = np.linalg.norm(np.mean(np.array(_xy(room), float), axis=0) - centre) < R
+            R_out = R + (WALL if inside_toward_centre else -WALL)
+            pa = centre + (a - centre) / R * R_out
+            pb = centre + (b - centre) / R * R_out
+            # split the outline edges at the two points; the pieces of a split arc stay on
+            # its circle unless they bow less than 3 px, in which case they are straight
+            new = [list(v) for v in outline]
+            by_edge = {}
+            for i, pt in ((ia, pa), (ib, pb)):
+                by_edge.setdefault(i, []).append(pt)
+            for i in sorted(by_edge, reverse=True):
+                p0 = np.array(new[i][:2], float)
+                p1 = np.array(new[(i + 1) % len(new)][:2], float)
+                pts = sorted(by_edge[i], key=lambda t: np.linalg.norm(t - p0))
+                chain = [p0] + pts + [p1]
+                b0 = new[i][2] if len(new[i]) == 3 and new[i][2] else 0.0
+                pieces = []
+                for u, v in zip(chain[:-1], chain[1:]):
+                    piece = [round(float(u[0]), 1), round(float(u[1]), 1)]
+                    if b0:
+                        _, R0 = _arc_circle(p0, p1, b0)
+                        c_len = np.linalg.norm(v - u)
+                        th = 2 * np.arcsin(min(c_len / (2 * R0), 1.0))
+                        sub = np.sign(b0) * np.tan(th / 4)
+                        if abs(sub) * c_len / 2 >= 3.0:
+                            piece.append(round(float(sub), 4))
+                    pieces.append(piece)
+                new[i:i + 1] = pieces
+            n = len(new)
+            ja = next(i for i, v in enumerate(new) if abs(v[0] - round(float(pa[0]), 1)) < 1e-6 and abs(v[1] - round(float(pa[1]), 1)) < 1e-6)
+            jb = next(i for i, v in enumerate(new) if abs(v[0] - round(float(pb[0]), 1)) < 1e-6 and abs(v[1] - round(float(pb[1]), 1)) < 1e-6)
+            # drop the vertices strictly between them along the shorter way round
+            fwd = (jb - ja) % n
+            bwd = (ja - jb) % n
+            if fwd <= bwd:
+                start, end, span = ja, jb, fwd
+            else:
+                start, end, span = jb, ja, bwd
+            drop = [(start + t) % n for t in range(1, span)]
+            kept = [v for i, v in enumerate(new) if i not in drop]
+            # the arc: the room's circle at the exterior radius
+            s_pt = np.array(kept[[i for i, v in enumerate(kept) if v[:2] == new[start][:2]][0]][:2], float)
+            e_pt = np.array(new[end][:2], float)
+            chord = np.linalg.norm(e_pt - s_pt)
+            theta = 2 * np.arcsin(min(chord / (2 * R_out), 1.0))
+            mid_room = centre + (((a + b) / 2 - centre) / max(np.linalg.norm((a + b) / 2 - centre), 1e-9)) * R
+            target = centre + (mid_room - centre) / R * R_out
+            cands = []
+            for sign in (1.0, -1.0):
+                bulge = sign * np.tan(theta / 4)
+                c2, R2 = _arc_circle(s_pt, e_pt, bulge)
+                mid = c2 + (((s_pt + e_pt) / 2 - c2) / max(np.linalg.norm((s_pt + e_pt) / 2 - c2), 1e-9)) * R2
+                cands.append((np.linalg.norm(mid - target), bulge))
+            bulge = min(cands)[1]
+            si = [i for i, v in enumerate(kept) if v[:2] == new[start][:2]][0]
+            kept[si] = [kept[si][0], kept[si][1], round(float(bulge), 4)]
+            outline[:] = kept
+            done += 1
+    return done
+
+
+def keep_inside(polys, outline, slack=1.5):
+    """Rooms may not cross the exterior wall: a room whose arcs carry it outside the outline
+    has those arcs flattened step by step until it fits. Returns the number of adjustments."""
+    boundary = Polygon(flatten_arcs(outline)).buffer(slack)
+    fixed = 0
+    for poly in polys:
+        if not any(len(p) == 3 and p[2] for p in poly):
+            continue
+        for _ in range(12):
+            g = Polygon(flatten_arcs(poly)).buffer(0)
+            if g.difference(boundary).area <= 2.0:
+                break
+            for p in poly:
+                if len(p) == 3:
+                    p[2] = round(p[2] * 0.8, 4)
+            fixed += 1
+    return fixed
 
 
 def reconcile(items, min_overlap=2.0):
@@ -1231,6 +1423,8 @@ def run(floor, geom_path, out_prefix, cfg=None, exterior_seed=(30, 30)):
             continue
         # close the mullion ticks along the curtain walls, then trace
         # the exterior trace carries the mullion ticks, so a curved facade fits a circle less tightly
+        if VERBOSE:
+            np.save(out_prefix + f'_outline_mask{len(outlines)}.npy', (cc == k).astype(np.uint8))
         outlines.append(straight_runs((cc == k).astype(np.uint8), EPS, eps_coarse=8, min_len=60, close=9, smooth=SMOOTH, curve_res=4.0))
     # unlabelled enclosed regions (stairs, elevators, restrooms, mechanical ...) for hand labelling
     rest = ((img == 0) & (exterior == 0) & (enclosed == 0)).astype(np.uint8)
@@ -1305,12 +1499,26 @@ def run(floor, geom_path, out_prefix, cfg=None, exterior_seed=(30, 30)):
                         + [(1, u) for u in unl] + [(2, r) for r in rooms if r['kind'] == 'open' and r.get('polygon')])
     print(f'  {n_fixed} polygons trimmed to remove overlaps')
     # Curves (the atrium, the piazzas, the curved facades) become circular arcs.
+    # The outline is finished first: arcs fitted, a facade traced as a zigzag of mullion
+    # ticks merged into one straight wall, and a facade bay that came out as two shallow
+    # pieces refitted as one arc. The rooms are fitted against it afterwards, so a room along
+    # a curved facade adopts the facade's circle for its exterior wall; the enclosed rooms
+    # then count as straight neighbours for the cores and open areas.
+    stages = {'traced': json.loads(json.dumps(outlines))}
+    arcify_all(outlines)
+    stages['arcs'] = json.loads(json.dumps(outlines))
+    outlines = [merge_collinear(o, max_dev=8.0, flat_sag=8.0) for o in outlines]
+    stages['merged'] = json.loads(json.dumps(outlines))
+    arcify_all(outlines, n_straight=0, refit_small=0.1, tol=1.5, min_run=2, short=250.0, loose=False)
+    stages['refit'] = json.loads(json.dumps(outlines))
+    if VERBOSE:
+        json.dump(stages, open(out_prefix + '_outline_stages.json', 'w'))
     closed = [r['polygon'] for r in rooms if r['kind'] == 'room' and r.get('polygon')]
-    arcify_all(closed + [u['polygon'] for u in unl] + [r['polygon'] for r in rooms if r['kind'] == 'open' and r.get('polygon')] + outlines, n_straight=len(closed))
-    # a facade traced as a zigzag of mullion ticks is one straight wall, and a facade bay
-    # that came out as two shallow pieces is one arc
-    outlines = [merge_collinear(o, flat=0.08, max_dev=8.0) for o in outlines]
-    arcify_all(outlines, n_straight=0, refit_small=0.1, tol=3.0, min_run=2, short=250.0)
+    if outlines:
+        n_f = outline_follow_rooms(outlines[0], closed)
+        if n_f:
+            print(f'  outline follows {n_f} curved room walls')
+    arcify_all(outlines + closed + [u['polygon'] for u in unl] + [r['polygon'] for r in rooms if r['kind'] == 'open' and r.get('polygon')], n_straight=len(outlines) + len(closed), near=10.0)
     for r in rooms:
         if r['kind'] == 'open' and r.get('polygon'):
             r['polygon'] = merge_collinear(r['polygon'])

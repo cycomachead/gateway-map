@@ -78,7 +78,15 @@ RAM, so floors are processed one at a time.
      corner fit, and a room in the floor's `quad` set keeps the corner fit but gets an arc for
      that wall (a box with a curved wall). Chains of nearly collinear edges on the outline
      and the open areas collapse to one straight edge, so a facade traced as a zigzag of
-     mullion ticks is one line with the curved bay as one arc between two straight walls.
+     mullion ticks is one line with the curved bay as one arc between two straight walls;
+     an arc is only collapsed when it bows less than 3 px, so the long facades keep their
+     subtle curves. The outline is arc-fitted before the rooms, and a room whose exterior
+     wall runs along a curved facade adopts the facade's circle for that wall, so the
+     exterior offices follow the curve. The other way round for a bay: where a room has a
+     clearly curved exterior wall (the social kitchen 4350), the outline takes that wall's
+     circle at the exterior face (`WALL`, 10 px out) between the room's corners, since the
+     interior trace measures the bay better than the exterior one. No room may cross the
+     outline; the tracer reports any that does.
      Later polygons adopt the arcs of earlier neighbours along a shared curve, and edges next
      to an enclosed room stay straight.
    - The door swing arcs are rasterised as walls so that rooms close, which would leave a
