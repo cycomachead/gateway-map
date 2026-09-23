@@ -144,9 +144,12 @@ button { font: inherit; color: inherit; }
 
 .floor__outline { fill: var(--floor-fill); stroke: var(--floor-stroke); stroke-width: 3; stroke-linejoin: round; }
 
+.furniture { pointer-events: none; }
+.desk { fill: var(--surface); stroke: var(--floor-stroke); stroke-width: 0.8; stroke-opacity: 0.6; }
+
 .space { cursor: pointer; outline: none; }
 .space__shape {
-  fill: var(--c); fill-opacity: 0.28; stroke: var(--c); stroke-width: 1.5; stroke-linejoin: round;
+  fill: var(--c); fill-opacity: 0.28; fill-rule: evenodd; stroke: var(--c); stroke-width: 1.5; stroke-linejoin: round;
   transition: fill-opacity 120ms ease, stroke-width 120ms ease;
 }
 .space--classroom { --c: var(--c-classroom); }

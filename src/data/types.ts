@@ -60,6 +60,8 @@ export interface Space {
   category: SpaceCategory;
   /** Closed outline; last point is implicitly joined to the first. Edges may be arcs via `bulge`. */
   polygon: Point[];
+  /** Cut-outs inside the outline (e.g. a huddle room standing in an open workspace). */
+  holes?: Point[][];
   /** Building zone, e.g. "Northeast" / "Southwest" on the Gateway wayfinding signs. */
   wing?: string;
   tags?: string[];
@@ -109,6 +111,8 @@ export interface Floor {
   outline: Point[];
   /** Additional separate footprints on this floor (e.g. a detached ground-floor block). */
   islands?: Point[][];
+  /** Desk footprints in the open workspaces, drawn for orientation only (not interactive). */
+  desks?: Point[][];
 }
 
 export interface Building {

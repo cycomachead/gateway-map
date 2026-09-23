@@ -45,6 +45,21 @@ test('rooms are addressable by their plan number on every floor', async ({ page 
   await expect(page.locator('#panel h2')).toHaveText('Shipping & Receiving B1342');
 });
 
+test('open workspaces show their desks, and the research labs are plain boxes', async ({ page }) => {
+  await page.getByRole('button', { name: '4', exact: true }).click();
+  // Desks are drawn as context only: many of them, none of them focusable or clickable.
+  expect(await page.locator('#map .furniture .desk').count()).toBeGreaterThan(200);
+  await expect(page.locator('#map .furniture')).toHaveAttribute('aria-hidden', 'true');
+  // Labs 4131, 4184 and 4192 are rectangles on the plan: four corners each.
+  for (const id of ['4-4131', '4-4184', '4-4192']) {
+    const d = (await page.locator(`[data-space-id="${id}"] .space__shape`).getAttribute('d')) ?? '';
+    expect(d.match(/[ML]/g)?.length, `${id} should be a box`).toBe(4);
+  }
+  // Huddle room 4151 stands inside open office 4160, which is drawn with a hole for it.
+  const open = (await page.locator('[data-space-id="4-4160"] .space__shape').getAttribute('d')) ?? '';
+  expect(open.match(/M/g)?.length).toBe(2);
+});
+
 test('keyboard users can select a room with Enter', async ({ page }) => {
   await page.getByRole('button', { name: '4', exact: true }).click();
   await page.locator('#map [data-space-id="4-4131"]').focus();

@@ -2,8 +2,8 @@
 
 Usage: python3 extract.py <pdf> <out.json>
 
-Writes segments, bezier curves, rectangles (all in PDF points, y down) and the text lines
-with their bounding boxes and font sizes. Everything downstream works from this JSON so the
+Writes segments, bezier curves, rectangles, quads (all in PDF points, y down) and the text
+lines with their bounding boxes and font sizes. Everything downstream works from this JSON so the
 (large) PDFs only have to be parsed once.
 """
 import json
@@ -15,7 +15,7 @@ import pymupdf
 def extract(src: str, out: str) -> None:
     doc = pymupdf.open(src)
     page = doc[0]
-    segs, curves, rects, polylines = [], [], [], []
+    segs, curves, rects, polylines, quads = [], [], [], [], []
     for d in page.get_drawings():
         col = d.get('color')
         width = d.get('width') or 0
@@ -26,6 +26,16 @@ def extract(src: str, out: str) -> None:
         # Furniture and fixtures are small multi-segment paths; wall pieces are single strokes
         # or long polylines. Used to build a furniture-free raster for the room polygons.
         furn = 1 if (len(items) >= 3 and max(rect.width, rect.height) <= 120) else 0
+        # Furniture is drawn as a white-filled polygon with a stroked quad outline on top
+        # (worksurfaces, pedestals, screens ...); walls are plain single strokes. So every single
+        # closed quad of furniture size is furniture. The ones with a real short side are kept
+        # separately so the desks can be drawn on the map.
+        if len(items) == 1 and items[0][0] == 'qu' and max(rect.width, rect.height) <= 120:
+            furn = 1
+            q = items[0][1]
+            pts = [q.ul, q.ur, q.lr, q.ll]
+            if min(abs(pts[i] - pts[(i + 1) % 4]) for i in range(4)) >= 4:
+                quads.append([[p.x, p.y] for p in pts] + [width, black])
         # Small chained polylines (door swings are drawn as ~10 short segments on a circle).
         if black and 3 <= len(items) <= 64 and all(it[0] == 'l' for it in items):
             r = d['rect']
@@ -61,8 +71,8 @@ def extract(src: str, out: str) -> None:
                 'dir': list(line['dir']),
             })
     json.dump({'page': [page.rect.width, page.rect.height], 'segs': segs, 'curves': curves,
-               'rects': rects, 'polylines': polylines, 'lines': lines}, open(out, 'w'))
-    print(f'{src}: {len(segs)} segments, {len(curves)} curves, {len(rects)} rects, {len(polylines)} polylines, {len(lines)} text lines')
+               'rects': rects, 'polylines': polylines, 'quads': quads, 'lines': lines}, open(out, 'w'))
+    print(f'{src}: {len(segs)} segments, {len(curves)} curves, {len(rects)} rects, {len(polylines)} polylines, {len(quads)} furniture quads, {len(lines)} text lines')
 
 
 if __name__ == '__main__':

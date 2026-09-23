@@ -11,6 +11,14 @@
              the upper floors (only the Lower Level sheet is drawn at another scale/rotation).
 All coordinates are PDF points of that floor's sheet.
 `manual`     (id, category, name, label, tags, polygon): rooms drawn by hand.
+`box`        label ids drawn as their bounding rectangle: labs whose internal lines (benches,
+             raised floors) are not walls and would otherwise notch or split the room.
+`quad`       label ids forced to their best four-corner fit (walls line-fitted, jogs and
+             folding partitions ignored) even where that covers the traced region loosely.
+`smooth`     open-area label ids drawn as sweeping shapes standing clear of the rooms (the
+             piazzas and porches get this by name).
+`sign`       (photo in floorplans/, (x, y) fraction of the map where the atrium oval is): the
+             wayfinding sign whose simplified map gives the piazzas their shape.
 `exits`      detect exterior doors (door arcs on the outline) and emit them as entrance POIs.
 """
 
@@ -47,9 +55,16 @@ FLOORS = {
               # stripes); traced by hand, number from the wayfinding signs.
               manual=[('1210', 'classroom', 'Lecture Hall 1210', '1210', ['lecture hall', 'auditorium'],
                        [(2105, 905), (2440, 862), (2955, 1392), (2455, 1478), (2205, 1290), (2100, 1000)])]),
-    '2': dict(pdf='2', label='2', level=2, named=CORES + NE_RESTROOMS + SW_RESTROOMS),
-    '3': dict(pdf='3', label='3', level=3, named=CORES + NE_RESTROOMS + SW_RESTROOMS),
-    '4': dict(pdf='4', label='4', level=4, named=CORES + NE_RESTROOMS + SW_RESTROOMS),
+    '2': dict(pdf='2', label='2', level=2, named=CORES + NE_RESTROOMS + SW_RESTROOMS, sign=('level2-whole-floor.jpg', (0.44, 0.52))),
+    '3': dict(pdf='3', label='3', level=3, named=CORES + NE_RESTROOMS + SW_RESTROOMS, sign=('level3-whole-floor.jpg', (0.44, 0.52))),
+    # The labs 4131/4184/4192/4408/4322 are plain boxes on the plan (their internal lines are
+    # benches); the social kitchens 4130 and 4350 are boxes with one curved wall, and the
+    # meeting rooms 4355/4375 and the study room 4310 are rectangles with a pilaster, a
+    # cabinet or a closet in a corner.
+    # Floors 2-4 share the plan around the atrium, and there is no level 4 sign photo.
+    '4': dict(pdf='4', label='4', level=4, named=CORES + NE_RESTROOMS + SW_RESTROOMS,
+              box={'4131', '4184', '4192', '4408', '4322'}, quad={'4130', '4350', '4355', '4375', '4310'},
+              sign=('level3-whole-floor.jpg', (0.44, 0.52))),
     # Floor 5 is set back: the paved roof terraces inside the parapet line are outside.
     '5': dict(pdf='5', label='5', level=5, named=[n for n in CORES if n is not EAST_STAIR], exterior=[(1800, 1300), (1800, 600), (800, 1900)]),
 }
@@ -66,6 +81,10 @@ for f in FLOORS.values():
     f.setdefault('transform', None)
     f.setdefault('manual', [])
     f.setdefault('exits', False)
+    f.setdefault('box', set())
+    f.setdefault('quad', set())
+    f.setdefault('smooth', set())
+    f.setdefault('sign', None)
 
 
 # ---------------------------------------------------------------------------
