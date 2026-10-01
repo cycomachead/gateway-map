@@ -323,6 +323,7 @@ SMOOTH_NAMES = ('PIAZZA', 'PORCH')  # open areas drawn as sweeping shapes, not h
 SMOOTH_OPEN = 25    # px; features narrower than this (door notches, office corners) vanish
 SMOOTH_INSET = 4    # px; the sweeping shape stands clear of the rooms around it
 EPS = 2.0    # px; polygon simplification tolerance for rooms
+QUAD_IOU = 0.9  # a four-corner fit covering the room this well replaces a notched one
 
 
 def _approx_n(c, n):
@@ -1034,11 +1035,15 @@ def reconcile(items, min_overlap=2.0):
     owners = []  # the item each kept polygon belongs to
     for prio, it in sorted(items, key=lambda t: (t[0], len(t[1]['polygon']), -abs(cv2.contourArea(np.array(_xy(t[1]['polygon']), np.float32))))):
         arcs_in = {(round(p[0], 1), round(p[1], 1)): p[2] for p in it['polygon'] if len(p) == 3 and p[2]}
-        poly = Polygon(_xy(it['polygon'])).buffer(0)
+        poly = Polygon(_xy(it['polygon']), [_xy(h) for h in it.get('terrace_holes', [])]).buffer(0)
+        if isinstance(poly, MultiPolygon):  # a self-touching trace: its main body
+            poly = max(poly.geoms, key=lambda g: g.area)
         if poly.is_empty:
             continue
         original = poly.area
         poly = poly.simplify(0.3)
+        if isinstance(poly, MultiPolygon):
+            poly = max(poly.geoms, key=lambda g: g.area)
         whole = poly
         if prio >= 2:  # open areas: close hairline gaps to every neighbour first
             for other in kept:
@@ -1137,6 +1142,23 @@ def run(floor, geom_path, out_prefix, cfg=None, exterior_seed=(30, 30)):
         if m is not None:
             exterior |= m
     h, w = img.shape
+    # A roof terrace (floor 5): the paved decks are traced from seed points (a seed on a paver
+    # takes the whole hatched deck), kept out of every room and region, and drawn as one open
+    # area around the indoor blocks.
+    terrace = np.zeros_like(img)
+    for sx, sy in cfg.get('terrace', ()):
+        m = flood(img, (sx * SCALE, sy * SCALE), tol=3)
+        if m is not None and np.count_nonzero(m) < TINY:
+            if cluster_mask is None:
+                cluster_mask = hatch_clusters(img)
+            m = flood(255 - cluster_mask, (sx * SCALE, sy * SCALE), tol=3, conn=8)
+        if m is None or (m & exterior).any():
+            print(f'  terrace seed {sx, sy} leaks outside: ignored')
+            continue
+        terrace |= m
+    if terrace.any():
+        terrace = cv2.morphologyEx(terrace, cv2.MORPH_CLOSE, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (9, 9)))
+        terrace[exterior > 0] = 0
     rooms, open_labels = [], []
     enclosed = np.zeros_like(img)
     taken = np.zeros_like(img)  # pixels already owned by an accepted room
@@ -1220,7 +1242,12 @@ def run(floor, geom_path, out_prefix, cfg=None, exterior_seed=(30, 30)):
         tidy = _prep(clean, 0, SMOOTH + 2)
         if lab_id in quads:
             return straighten(tidy, ns=(4,), min_iou=0, max_shift=40, max_dev=None, curved_edges=True) or box_poly(clean)
-        return straighten(tidy) or straight_runs(tidy, EPS, eps_coarse=6, min_len=20)
+        poly = straighten(tidy)
+        if poly is None or len(poly) > 4:
+            # most rooms have four walls: a looser four-corner fit that still covers the room
+            # well wins over a fit that keeps a notch (a pilaster, a closet, a door recess)
+            poly = straighten(tidy, ns=(4,), min_iou=QUAD_IOU, max_shift=25, max_dev=6.0) or poly
+        return poly or straight_runs(tidy, EPS, eps_coarse=6, min_len=20)
 
     def accept(lab, m, seed=None):
         room_masks[lab['id']] = m
@@ -1370,7 +1397,7 @@ def run(floor, geom_path, out_prefix, cfg=None, exterior_seed=(30, 30)):
         r['polygon'] = room_poly(r['id'], room_masks[r['id']], seeds_used.get(r['id']))
     # unenclosed free space -> partition between open labels (geodesic Voronoi). Traced on the
     # furniture-free raster so desks and chairs do not carve the open areas.
-    free = (walls == 0) & (exterior == 0) & (enclosed == 0)
+    free = (walls == 0) & (exterior == 0) & (enclosed == 0) & (terrace == 0)
     furniture = []
     if open_labels:
         markers = np.zeros(img.shape, np.int32)
@@ -1409,9 +1436,52 @@ def run(floor, geom_path, out_prefix, cfg=None, exterior_seed=(30, 30)):
                 continue
             rooms.append({**lab, 'kind': 'open', 'area': int(np.count_nonzero(m)), 'polygon': poly})
         furniture = desks(geom, (ws > 0).astype(np.uint8))
+    # Rooms drawn by hand in the floor config (labs whose benches are drawn as walls, a room
+    # whose side is open to the neighbouring workspace): the polygon replaces the traced one.
+    # A room the plan does not number (the lecture halls on floor 1) is given as (name, polygon).
+    for lab_id, poly in cfg.get('hand', {}).items():
+        name = None
+        if isinstance(poly, tuple):
+            name, poly = poly
+        hits = [r for r in rooms if r['id'] == lab_id]
+        if not hits:
+            if name is None:
+                print(f'  hand polygon for {lab_id}: no such label')
+                continue
+            P = np.array(poly, float)
+            hits = [{'id': lab_id, 'name': name, 'x': float(P[:, 0].mean()), 'y': float(P[:, 1].mean()), 'size': 0}]
+            rooms.append(hits[0])
+        hits[0].update(kind='room', polygon=[[float(x), float(y)] for x, y in poly])
+        if name:
+            hits[0]['name'] = name
     # outline(s): components of the non-exterior that hold labels
     # Thin site lines between two exterior areas would join separate blocks; erode them away.
     inside = cv2.erode((exterior == 0).astype(np.uint8), np.ones((5, 5), np.uint8))
+    # Exterior doors swing out: their swing, rasterised as a wall, bumps the outline outward
+    # and the doorway notches it. The swings are taken out and the openings sealed, so the
+    # facade runs straight past its doors; the doors become entrance markers instead.
+    ext_doors = []
+    if cfg.get('exits'):
+        near_ext = cv2.dilate(exterior, np.ones((7, 7), np.uint8))
+        for mid, out, p in arcs:
+            q = np.round(np.asarray(p) * SCALE).astype(int)
+            q[:, 0] = np.clip(q[:, 0], 0, w - 1)
+            q[:, 1] = np.clip(q[:, 1], 0, h - 1)
+            if (near_ext[q[:, 1], q[:, 0]] > 0).mean() < 0.5:
+                continue
+            cx_, cy_, _, _ = fit_circle(np.asarray(p, float))
+            sector = np.vstack([[cx_, cy_], p])
+            cv2.fillPoly(inside, [np.round(sector * SCALE).astype(np.int32)], 0)
+            cv2.fillPoly(zone_px := np.zeros_like(inside), [np.round(sector * SCALE).astype(np.int32)], 1)
+            ext_doors.append((mid, np.array([cx_, cy_]), zone_px))
+        # sealed only where the swings were, so a planter standing close to a facade stays outside
+        zone = np.zeros_like(inside)
+        for _, _, z in ext_doors:
+            zone |= z
+        zone = cv2.dilate(zone, np.ones((9, 9), np.uint8))
+        seal = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (25, 25))
+        inside |= cv2.morphologyEx(inside, cv2.MORPH_CLOSE, seal) & zone
+        ext_doors = [(m, hg) for m, hg, _ in ext_doors]
     n, cc = cv2.connectedComponents(inside)
     comps = {}
     for lab in labs:
@@ -1427,7 +1497,7 @@ def run(floor, geom_path, out_prefix, cfg=None, exterior_seed=(30, 30)):
             np.save(out_prefix + f'_outline_mask{len(outlines)}.npy', (cc == k).astype(np.uint8))
         outlines.append(straight_runs((cc == k).astype(np.uint8), EPS, eps_coarse=8, min_len=60, close=9, smooth=SMOOTH, curve_res=4.0))
     # unlabelled enclosed regions (stairs, elevators, restrooms, mechanical ...) for hand labelling
-    rest = ((img == 0) & (exterior == 0) & (enclosed == 0)).astype(np.uint8)
+    rest = ((img == 0) & (exterior == 0) & (enclosed == 0) & (terrace == 0)).astype(np.uint8)
     if open_labels:
         rest[ws > 0] = 0
     n, cc, stats, cents = cv2.connectedComponentsWithStats(rest, connectivity=4)  # match the 4-connected flood fill
@@ -1459,9 +1529,37 @@ def run(floor, geom_path, out_prefix, cfg=None, exterior_seed=(30, 30)):
         if poly is None or len(poly) < 3:
             continue
         unl.append({'area': area, 'x': round(float(cents2[k][0] / SCALE), 1), 'y': round(float(cents2[k][1] / SCALE), 1), 'polygon': poly, 'cluster': True})
+    # Where stairs wind down inside the atrium's rail (floors 2 and 3), the opening never
+    # closes as one region: the floor gives the rail's ellipse, which replaces the stair
+    # flights and treads standing inside it.
+    if cfg.get('atrium'):
+        ecx, ecy, ea, eb, eang = cfg['atrium']
+        ell = cv2.ellipse2Poly((int(round(ecx * 8)), int(round(ecy * 8))), (int(round(ea * 8)), int(round(eb * 8))), int(round(eang)), 0, 360, 5) / 8.0
+        E = Polygon(ell)
+        unl = [u for u in unl if not E.contains(Point(u['x'], u['y']))]
+        unl.append({'area': int(E.area), 'atrium': True, 'x': round(float(ecx), 1), 'y': round(float(ecy), 1), 'polygon': [[round(float(x), 1), round(float(y), 1)] for x, y in ell[:-1]]})
     unl.sort(key=lambda u: -u['area'])
     for i, u in enumerate(unl):
         u['idx'] = i
+    if terrace.any():
+        k_ = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (SMOOTH_OPEN, SMOOTH_OPEN))
+        tm = cv2.morphologyEx(cv2.morphologyEx(terrace, cv2.MORPH_CLOSE, k_), cv2.MORPH_OPEN, k_)
+        # the indoor blocks stand inside the deck: they are its holes
+        cs, hier = cv2.findContours(tm, cv2.RETR_CCOMP, cv2.CHAIN_APPROX_NONE)
+        for k, c in enumerate(cs):
+            if hier[0][k][3] != -1 or cv2.contourArea(c) < 5000:
+                continue
+            outer = cv2.approxPolyDP(c, EPS, True).reshape(-1, 2) / SCALE
+            holes = []
+            j = hier[0][k][2]
+            while j != -1:
+                if cv2.contourArea(cs[j]) >= 2000:
+                    holes.append([[round(float(x), 1), round(float(y), 1)] for x, y in cv2.approxPolyDP(cs[j], EPS, True).reshape(-1, 2) / SCALE])
+                j = hier[0][j][0]
+            M = cv2.moments(c)
+            rooms.append({'id': 'terrace', 'name': 'ROOF TERRACE', 'x': M['m10'] / M['m00'] / SCALE, 'y': M['m01'] / M['m00'] / SCALE, 'size': 0,
+                          'kind': 'open', 'area': int(cv2.contourArea(c)), 'terrace_holes': holes,
+                          'polygon': [[round(float(x), 1), round(float(y), 1)] for x, y in outer]})
     # The piazzas: their shape comes from the wayfinding sign (the white band between the
     # wings, registered onto the outline), split between the piazza labels and cut away from
     # the rooms and cores the CAD knows precisely.
@@ -1522,14 +1620,38 @@ def run(floor, geom_path, out_prefix, cfg=None, exterior_seed=(30, 30)):
     for r in rooms:
         if r['kind'] == 'open' and r.get('polygon'):
             r['polygon'] = merge_collinear(r['polygon'])
+    # No room may cross the exterior wall: an arc that carries a room outside is flattened
+    # step by step, and whatever still sticks out (a fill that crept into the facade's wall
+    # cavity) is cut off along the outline.
+    if outlines:
+        inside = shapely.union_all([Polygon(flatten_arcs(o)).buffer(0) for o in outlines])
+        placed = [r for r in rooms if r.get('polygon')]
+        for r in placed:
+            keep_inside([r['polygon']], max(outlines, key=lambda o: Polygon(flatten_arcs(o)).area))
+            g = Polygon(flatten_arcs(r['polygon']), [_xy(hl) for hl in r.get('holes', [])]).buffer(0)
+            if g.difference(inside.buffer(1.5)).area <= 2.0:
+                continue
+            g = g.intersection(inside)
+            if isinstance(g, MultiPolygon):
+                g = max(g.geoms, key=lambda q: q.area)
+            if g.is_empty:
+                continue
+            g = g.simplify(0.5)
+            r['polygon'] = [[round(float(x), 1), round(float(y), 1)] for x, y in g.exterior.coords[:-1]]
+            if r.get('holes'):
+                r['holes'] = [[[round(float(x), 1), round(float(y), 1)] for x, y in ring.coords[:-1]] for ring in g.interiors if Polygon(ring).area >= 20]
+            print(f"  {r['id']} crossed the outline: cut along it")
     # Exterior doors: door arcs whose midpoint lies on the outline -> entrances.
     exits = []
     if cfg.get('exits') and outlines:
-        conts = [np.array(o, np.float32) for o in outlines]
-        for mid, out, _ in arcs:
-            d = min(abs(cv2.pointPolygonTest(c, (float(mid[0]), float(mid[1])), True)) for c in conts)
-            if d <= 12 and all(np.hypot(mid[0] - ex, mid[1] - ey) > 40 for ex, ey in exits):
-                exits.append([round(float(mid[0]), 1), round(float(mid[1]), 1)])
+        # each exterior door is marked at its hinge side of the doorway, on the outline; a pair
+        # of leaves (double door) is one entrance
+        conts = [np.array(flatten_arcs(o), np.float32) for o in outlines]
+        for mid, hinge in ext_doors:
+            at = (mid + hinge) / 2
+            d = min(abs(cv2.pointPolygonTest(c, (float(at[0]), float(at[1])), True)) for c in conts)
+            if d <= 25 and all(np.hypot(at[0] - ex, at[1] - ey) > 40 for ex, ey in exits):
+                exits.append([round(float(at[0]), 1), round(float(at[1]), 1)])
     json.dump({'floor': floor, 'rooms': rooms, 'outlines': outlines, 'unlabelled': unl, 'exits': exits, 'desks': furniture}, open(out_prefix + '_rooms.json', 'w'))
     if VERBOSE:  # the room masks (bbox crops with their offset) and seeds, for debugging offline
         raw = {}

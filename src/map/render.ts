@@ -1,4 +1,4 @@
-import type { Building, Floor, Poi, Space } from '../data/types';
+import type { Building, Floor, Poi, Space, Street } from '../data/types';
 import { POI_LABELS } from '../data/types';
 import { centroid, toPath } from './geometry';
 
@@ -33,7 +33,7 @@ function renderSpace(space: Space): SVGGElement {
     role: 'button',
     'aria-label': space.name,
   });
-  const d = [space.polygon, ...(space.holes ?? [])].map(toPath).join(' ');
+  const d = [space.polygon, ...(space.holes ?? [])].map((p) => toPath(p)).join(' ');
   g.appendChild(el('path', { d, class: 'space__shape' }));
 
   const c = centroid(space.polygon);
@@ -69,9 +69,25 @@ function renderPoi(poi: Poi): SVGGElement {
   return g;
 }
 
+/** A street: the carriageway as a wide stroke, a dashed centre line and its name along it. */
+function renderStreet(street: Street): SVGGElement {
+  const g = el('g', { class: 'street', 'data-street-id': street.id, 'aria-hidden': 'true' });
+  const d = toPath(street.path, false);
+  const pathId = `street-${street.id}`;
+  g.appendChild(el('path', { d, class: 'street__road', 'stroke-width': street.width }));
+  g.appendChild(el('path', { d, id: pathId, class: 'street__centre' }));
+  const text = el('text', { class: 'street__name', dy: '0.35em' });
+  const along = el('textPath', { href: `#${pathId}`, startOffset: '40%', 'text-anchor': 'middle' });
+  along.textContent = street.name;
+  text.appendChild(along);
+  g.appendChild(text);
+  return g;
+}
+
 /** Builds the SVG subtree for one floor. Caller decides where to mount it. */
 export function renderFloor(building: Building, floor: Floor): SVGGElement {
   const root = el('g', { class: 'floor', 'data-floor-id': floor.id });
+  for (const street of building.streets ?? []) root.appendChild(renderStreet(street));
   root.appendChild(el('path', { d: toPath(floor.outline), class: 'floor__outline' }));
   for (const island of floor.islands ?? []) root.appendChild(el('path', { d: toPath(island), class: 'floor__outline' }));
 

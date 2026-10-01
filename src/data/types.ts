@@ -115,9 +115,20 @@ export interface Floor {
   desks?: Point[][];
 }
 
+/** A street next to the building, drawn on every floor for orientation (not interactive). */
+export interface Street {
+  id: string;
+  name: string;
+  /** Centre line, in floor coordinates (edges may be arcs via `bulge`). */
+  path: Point[];
+  /** Carriageway width, in floor units. */
+  width: number;
+}
+
 export interface Building {
   name: string;
   floors: Floor[];
   spaces: Space[];
   pois: Poi[];
+  streets?: Street[];
 }

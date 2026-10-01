@@ -7,6 +7,7 @@ import * as l2 from './gateway/level2';
 import * as l3 from './gateway/level3';
 import * as l4 from './gateway/level4';
 import * as l5 from './gateway/level5';
+import { hearst } from './gateway/streets';
 import type { Building, Floor, Space } from './types';
 
 /**
@@ -50,4 +51,5 @@ export const building: Building = {
   floors,
   spaces,
   pois,
+  streets: [{ id: 'hearst', name: 'Hearst Avenue', path: pts(hearst.path), width: hearst.width }],
 };

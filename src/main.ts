@@ -2,7 +2,7 @@ import './style.css';
 import { building, DEFAULT_FLOOR_ID } from './data/building';
 import type { Floor } from './data/types';
 import { validateBuilding } from './data/validate';
-import { bbox, pad } from './map/geometry';
+import { bbox, pad, streetBox, unionBox } from './map/geometry';
 import { attachPanZoom } from './map/panzoom';
 import { renderFloor, spaceIdFromEvent } from './map/render';
 import { createStore } from './state';
@@ -41,8 +41,10 @@ function mountFloor(floorId: string) {
 }
 
 function fitFloor(floor: Floor) {
-  // Fit the whole footprint, including detached blocks (e.g. Level 1's Southwest block).
-  panzoom.fit(pad(bbox([floor.outline, ...(floor.islands ?? [])].flat()), 24));
+  // Fit the whole footprint, including detached blocks (e.g. Level 1's Southwest block),
+  // and the stretch of street in front of it (its name is drawn there).
+  const footprint = bbox([floor.outline, ...(floor.islands ?? [])].flat());
+  panzoom.fit(pad(unionBox(footprint, ...building.streets?.map((s) => streetBox(s, footprint)) ?? []), 24));
 }
 
 function syncSpaceClasses(selectedId: string | null, categories: Set<string>) {

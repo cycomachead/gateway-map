@@ -54,4 +54,6 @@ npm run test:a11y  # just the axe accessibility scans
   registers a floor's sign onto the CAD outline and takes the piazzas' shape from it (the
   white band around the atrium on the sign), so those sweeping curves match the signs; the
   photos are also a handy cross-check for room names.
+- Hearst Avenue, north of the building, is hand-placed in `src/data/gateway/streets.ts` and
+  drawn on every floor for orientation.
 - Run the app; data problems (duplicate ids, unknown floors) are logged to the console.

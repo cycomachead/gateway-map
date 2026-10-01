@@ -105,10 +105,33 @@ RAM, so floors are processed one at a time.
      listed for hand naming. Hatched floors, stair treads and elevator X marks chop those rooms
      into tiny cells; adjacent cells are merged back into one region.
    - Door arcs lying on the outline are exterior doors and become entrance POIs.
+   - Most rooms have four walls: when the simplest line-fitted polygon keeps a notch (a
+     pilaster, a closet, a door recess), a looser four-corner fit that still covers the room
+     (IoU ≥ `QUAD_IOU`) replaces it.
+   - Exterior doors swing out, so their swings used to bump the outline and the doorways
+     notched it. Swings lying against the exterior are cut out and the opening sealed (only
+     there, so planters close to a facade stay outside); the facade runs straight past the
+     door and the door becomes an entrance marker at its doorway.
+   - No room may cross the outline: after the arcs are fitted, anything that still sticks out
+     (a fill that crept into a facade's wall cavity) is cut along the outline.
+   - Floors 1–3 have stairs winding down inside the atrium's rail, so the opening never closes
+     as one region; the floor's `atrium` ellipse replaces the stair pieces inside it.
+   - Floor 5's indoor blocks stand on a paved roof terrace (`terrace` seeds on its pavers and
+     walkways). The deck is one open area with the blocks as its holes.
+   - Plans that number only the furnished rooms (Lower Level, 1, 5) set `unnamed`: every
+     other enclosed region of room size is emitted as an unnumbered room (a rectangle when it
+     nearly fills one), leaving out strips along the facades, corridors and pockets inside a
+     room.
+   - Rooms whose fill cannot be traced (a label in the corridor, benches drawn as walls, a
+     side open to the neighbouring workspace, the tiered lecture halls) are drawn by hand in
+     the floor's `hand`, from wall coordinates read off the sheet.
 3. `floors.py` — per-floor configuration: label style, hand seeds, gap-sealing strokes, named
    regions (identified by a point inside them), hand polygons, boxed rooms, and the similarity transform
    that registers the Lower Level sheet (drawn at 1/8" = 1' and rotated) onto the upper-floor
    sheets; it was fitted on the six elevator shafts and has a residual below 0.1 pt. Also maps
    the plan's room names to categories and display names.
-4. `emit_ts.py` — writes the modules. Coordinates are PDF points of the upper-floor sheets,
+4. `emit_ts.py` — writes the modules. A final pass guarantees rooms never overlap: arcs fitted
+   after the reconciliation, boxed cores, ellipses and hand shapes can still bite a neighbour,
+   so each polygon gives up what a higher-priority one covers (enclosed rooms, then cores and
+   named regions, then open areas, then unnumbered rooms). Coordinates are PDF points of the upper-floor sheets,
    shifted so the building starts near the origin (`frame.ts`).
