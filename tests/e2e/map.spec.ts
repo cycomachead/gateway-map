@@ -109,3 +109,32 @@ test('wheel zoom and drag pan change the view', async ({ page }) => {
   // A drag must not select whatever room ends up under the pointer.
   await expect(page.locator('#panel h2')).toHaveText('Floor 1');
 });
+
+test('Hearst Avenue is drawn north of the building on every floor', async ({ page }) => {
+  for (const label of ['LL', '1', '2', '3', '4', '5']) {
+    await page.getByRole('button', { name: label, exact: true }).click();
+    const street = page.locator('#map [data-street-id="hearst"]');
+    await expect(street).toHaveAttribute('aria-hidden', 'true');
+    await expect(street.locator('textPath')).toHaveText('Hearst Avenue');
+    // The street runs above (north of) the building's outline.
+    const road = (await street.locator('.street__road').boundingBox())!;
+    const outline = (await page.locator('#map .floor__outline').first().boundingBox())!;
+    expect(road.y).toBeLessThan(outline.y);
+  }
+});
+
+test('every floor shows its atrium, and floor 5 its roof terrace', async ({ page }) => {
+  for (const label of ['1', '2', '3']) {
+    await page.getByRole('button', { name: label, exact: true }).click();
+    await expect(page.locator(`#map [data-space-id="${label}-atrium"]`)).toHaveCount(1);
+  }
+  await page.getByRole('button', { name: '5', exact: true }).click();
+  await expect(page.locator('#map [data-space-id="5-skylight"]')).toHaveCount(1);
+  // The terrace wraps around the indoor blocks: they are holes in it.
+  const d = (await page.locator('[data-space-id="5-terrace"] .space__shape').getAttribute('d')) ?? '';
+  expect(d.match(/M/g)?.length).toBeGreaterThan(1);
+});
+
+test('exterior doors are entrance markers, not notches in the outline', async ({ page }) => {
+  expect(await page.locator('#map .poi--exit').count()).toBeGreaterThan(5);
+});

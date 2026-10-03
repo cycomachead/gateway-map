@@ -10,6 +10,8 @@
   --accent-soft: #dbe4ff;
   --floor-fill: #fbfbfc;
   --floor-stroke: #7c8494;
+  --street: #e2e5ea;
+  --street-line: #ffffff;
 
   --c-classroom: #0ea5e9;
   --c-lab: #8b5cf6;
@@ -39,6 +41,8 @@
     --accent-soft: #24304f;
     --floor-fill: #1c2029;
     --floor-stroke: #6b7385;
+    --street: #262a33;
+    --street-line: #4a5160;
     --c-circulation: #3a4150;
     --shadow: 0 4px 16px rgba(0, 0, 0, 0.45);
   }
@@ -143,6 +147,14 @@ button { font: inherit; color: inherit; }
 .map.is-dragging { cursor: grabbing; }
 
 .floor__outline { fill: var(--floor-fill); stroke: var(--floor-stroke); stroke-width: 3; stroke-linejoin: round; }
+
+.street { pointer-events: none; }
+.street__road { fill: none; stroke: var(--street); stroke-linecap: butt; }
+.street__centre { fill: none; stroke: var(--street-line); stroke-width: 3; stroke-dasharray: 28 22; }
+.street__name {
+  fill: var(--text-muted); font-size: 34px; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase;
+  paint-order: stroke; stroke: var(--street); stroke-width: 10px; stroke-linejoin: round;
+}
 
 .furniture { pointer-events: none; }
 .desk { fill: var(--surface); stroke: var(--floor-stroke); stroke-width: 0.8; stroke-opacity: 0.6; }

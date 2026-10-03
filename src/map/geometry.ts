@@ -1,4 +1,4 @@
-import type { Point } from '../data/types';
+import type { Point, Street } from '../data/types';
 
 export interface BBox {
   x: number;
@@ -66,11 +66,12 @@ export function flatten(points: Point[], maxSegmentAngle = Math.PI / 12): Point[
   return out;
 }
 
-/** SVG path data for a closed outline, using true arcs for bulged edges. */
-export function toPath(points: Point[]): string {
+/** SVG path data for an outline, using true arcs for bulged edges; `closed: false` for a line (a street). */
+export function toPath(points: Point[], closed = true): string {
   if (points.length === 0) return '';
   const parts: string[] = [`M${fmt(points[0].x)} ${fmt(points[0].y)}`];
-  for (let i = 0; i < points.length; i++) {
+  const edges = closed ? points.length : points.length - 1;
+  for (let i = 0; i < edges; i++) {
     const a = points[i];
     const b = points[(i + 1) % points.length];
     const bulge = a.bulge ?? 0;
@@ -85,7 +86,7 @@ export function toPath(points: Point[]): string {
     if (Math.hypot(b.x - a.x, b.y - a.y) < 1e-9) continue;
     parts.push(`A${fmt(arc.r)} ${fmt(arc.r)} 0 ${large} ${sweepFlag} ${fmt(b.x)} ${fmt(b.y)}`);
   }
-  parts.push('Z');
+  if (closed) parts.push('Z');
   return parts.join(' ');
 }
 
@@ -134,4 +135,26 @@ export function pad(box: BBox, amount: number): BBox {
     width: box.width + amount * 2,
     height: box.height + amount * 2,
   };
+}
+
+/** Smallest box holding all the given boxes. */
+export function unionBox(first: BBox, ...rest: BBox[]): BBox {
+  let { x: x0, y: y0 } = first;
+  let x1 = first.x + first.width;
+  let y1 = first.y + first.height;
+  for (const b of rest) {
+    x0 = Math.min(x0, b.x);
+    y0 = Math.min(y0, b.y);
+    x1 = Math.max(x1, b.x + b.width);
+    y1 = Math.max(y1, b.y + b.height);
+  }
+  return { x: x0, y: y0, width: x1 - x0, height: y1 - y0 };
+}
+
+/** The box of the stretch of a street that runs past `within` (its x range), carriageway included. */
+export function streetBox(street: Street, within: BBox): BBox {
+  const line = flatten(street.path, Math.PI / 180);
+  const near = line.filter((p) => p.x >= within.x && p.x <= within.x + within.width);
+  if (!near.length) return within;
+  return pad(bbox(near), street.width / 2);
 }

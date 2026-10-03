@@ -69,8 +69,8 @@ def ellipse_of(poly, n=48):
     """The ellipse fitted to a polygon, as arcs (a third value on a vertex is the bulge)."""
     import cv2
     import numpy as np
-    from rooms import arcify
-    (cx, cy), (w, h), ang = cv2.fitEllipse(np.array(xy(poly), np.float32))
+    from rooms import arcify, flatten_arcs
+    (cx, cy), (w, h), ang = cv2.fitEllipse(np.array(flatten_arcs(poly), np.float32))
     t = np.radians(ang)
     a = np.linspace(0, 2 * np.pi, n, endpoint=False)
     u, v = w / 2 * np.cos(a), h / 2 * np.sin(a)
@@ -127,6 +127,7 @@ def emit_floor(fid, d, x0, y0, out_dir):
     lines.append('export const desks: XY[][] = [' + ', '.join(fmt_poly(to_frame(dsk)) for dsk in d.get('desks', [])) + '];')
     lines.append('')
     lines.append('export const rooms: RoomSpec[] = [')
+    entries = []  # (priority, wing, id, category, polygon, extra); lower priority keeps its shape
     seen = {}
     for r in sorted(d['rooms'], key=lambda r: (r['kind'] != 'room', r['id'])):
         if r['id'] in cfg['skip'] or not r.get('polygon'):
@@ -136,19 +137,19 @@ def emit_floor(fid, d, x0, y0, out_dir):
         if seen[rid] > 1:
             rid = f"{rid}-{seen[rid]}"
         cat = category(r['name'], r['id'])
-        name = display_name(r['name'], r['id'])
+        name = display_name(r['name'], r['id']) if r['id'] != 'terrace' else 'Roof Terrace'
         w = wing(r['id'])
-        extra = {'name': name, 'label': r['id']}
+        extra = {'name': name, 'label': r['id'] if r['id'] != 'terrace' else 'Terrace'}
         if r.get('holes'):
-            extra['holes'] = [to_frame(h) for h in r['holes']]
+            extra['holes'] = r['holes']
         tags = [t for t in r['name'].lower().replace('/', ' ').split() if len(t) > 2 and t not in {'the', 'and'}]
         if r['kind'] == 'open':
             tags.append('open plan')
         if tags:
             extra['tags'] = tags
-        lines.append(f"  [{ts_str(w) if w else 'undefined'}, {ts_str(rid)}, {ts_str(cat)}, {fmt_poly(to_frame(r['polygon']))}, {fmt_extra(extra)}],")
+        entries.append((0 if r['kind'] == 'room' else 2, w, rid, cat, r['polygon'], extra))
     from shapely.geometry import MultiPolygon, Polygon
-    placed = [Polygon(xy(r['polygon'])).buffer(0) for r in d['rooms'] if r.get('polygon')]
+    placed = [Polygon(xy(r['polygon']), [xy(h) for h in r.get('holes', [])]).buffer(0) for r in d['rooms'] if r.get('polygon')]
     resolved = []
     for px, py, uid, cat, name, label, tags in cfg['named']:
         points = px if isinstance(px, list) else [(px, py)]
@@ -172,24 +173,85 @@ def emit_floor(fid, d, x0, y0, out_dir):
             poly = regions[0]['polygon'] if len(regions) == 1 else union_polys([r['polygon'] for r in regions])
         if 'atrium' in tags:  # the atrium is an oval: a clean ellipse through its traced outline
             poly = ellipse_of(poly)
-        elif BOXED_TAGS & set(tags):
-            poly = box_of(poly)
-            g = Polygon(poly).buffer(0)  # a box may reach into a neighbour: trim it
+        else:
+            if BOXED_TAGS & set(tags):
+                poly = box_of(poly)
+            # a box (or a region traced into a doorway) may reach into a neighbour: trim it
+            g = Polygon(xy(poly)).buffer(0)
+            trimmed = False
             for other in placed:
                 if g.intersects(other) and g.intersection(other).area > 2:
                     g = g.difference(other)
+                    trimmed = True
                     if isinstance(g, MultiPolygon):
                         g = max(g.geoms, key=lambda q: q.area)
-            poly = [[float(x), float(y)] for x, y in g.simplify(0.3).exterior.coords[:-1]]
+            if trimmed or BOXED_TAGS & set(tags):
+                poly = [[float(x), float(y)] for x, y in g.simplify(0.3).exterior.coords[:-1]]
         placed.append(Polygon(xy(poly)).buffer(0))
         extra = {'name': name, 'label': label, 'tags': tags}
         w = wing(uid) or ('Northeast' if uid.startswith('ne-') else 'Southwest' if uid.startswith('sw-') else None)
-        lines.append(f"  [{ts_str(w) if w else 'undefined'}, {ts_str(uid)}, {ts_str(cat)}, {fmt_poly(to_frame(poly))}, {fmt_extra(extra)}],")
+        entries.append((1, w, uid, cat, poly, extra))
     for uid, cat, name, label, tags, poly in cfg['manual']:
         extra = {'name': name, 'label': label, 'tags': tags}
         w = wing(uid)
         poly = clip_to(poly, d['outlines'])
-        lines.append(f"  [{ts_str(w) if w else 'undefined'}, {ts_str(uid)}, {ts_str(cat)}, {fmt_poly(to_frame(poly))}, {fmt_extra(extra)}],")
+        placed.append(Polygon(xy(poly)).buffer(0))
+        entries.append((1, w, uid, cat, poly, extra))
+    if cfg['unnamed']:
+        # Floors whose plan numbers only the furnished rooms (Lower Level, 1, 5): every other
+        # enclosed room of room size is drawn too, unnamed, so the floor is not a blank slab.
+        # Pockets inside a placed room (a table, a bench block) and slivers are left out.
+        from shapely.ops import unary_union
+        taken = unary_union(placed) if placed else Polygon()
+        from rooms import flatten_arcs
+        inside = unary_union([Polygon(flatten_arcs(o)).buffer(0) for o in d['outlines']])
+        used = {id(r) for o in resolved for r in o[6]}
+        k = 0
+        for u in sorted(d['unlabelled'], key=lambda u: -u['area']):
+            if id(u) in used or u.get('atrium') or not cfg['unnamed'] <= u['area'] <= cfg['unnamed_max']:
+                continue
+            g = Polygon(xy(u['polygon'])).buffer(0)
+            if g.is_empty or not inside.contains(g.representative_point()) or g.intersection(taken).area > 0.3 * g.area:
+                continue
+            # a long thin strip is a wall cavity or a planting bed along a facade, not a room
+            import cv2
+            import numpy as np
+            (_, _), (rw, rh), _ = cv2.minAreaRect(np.array(xy(u['polygon']), np.float32))
+            if min(rw, rh) < 20 or max(rw, rh) > 6 * min(rw, rh):
+                continue
+            # and a region that fills little of its bounding rectangle is a corridor or a
+            # leftover between rooms, not a room
+            if g.area < 0.5 * rw * rh:
+                continue
+            # a pocket inside a larger unnamed room (its tables) is part of that room
+            if any(o.contains(g.representative_point()) for o in placed):
+                continue
+            poly = u['polygon']
+            # most rooms have four walls: a region that nearly fills its bounding rectangle is
+            # drawn as that rectangle (the notches are fixtures and door recesses)
+            if g.area >= 0.85 * rw * rh:
+                poly = [[float(x), float(y)] for x, y in cv2.boxPoints(cv2.minAreaRect(np.array(xy(u['polygon']), np.float32)))]
+                g = Polygon(poly).buffer(0)
+                if g.difference(inside).area > 2:
+                    g = g.intersection(inside)
+                    if isinstance(g, MultiPolygon):
+                        g = max(g.geoms, key=lambda q: q.area)
+                    poly = [[float(x), float(y)] for x, y in g.simplify(0.3).exterior.coords[:-1]]
+            if g.intersects(taken) and g.intersection(taken).area > 2:
+                g = g.difference(taken)
+                if isinstance(g, MultiPolygon):
+                    g = max(g.geoms, key=lambda q: q.area)
+                poly = [[float(x), float(y)] for x, y in g.simplify(0.3).exterior.coords[:-1]]
+            k += 1
+            placed.append(g)
+            taken = taken.union(g)
+            entries.append((3, None, f'room-{k}', 'service', poly, {'name': 'Room', 'label': '', 'tags': ['unnumbered']}))
+        print(f'  floor {fid}: {k} unnumbered rooms')
+    resolve_overlaps(entries)
+    for _, w, rid, cat, poly, extra in entries:
+        if extra.get('holes'):
+            extra = {**extra, 'holes': [to_frame(h) for h in extra['holes']]}
+        lines.append(f"  [{ts_str(w) if w else 'undefined'}, {ts_str(rid)}, {ts_str(cat)}, {fmt_poly(to_frame(poly))}, {fmt_extra(extra)}],")
     lines.append('];')
     lines.append('')
     lines.append('export const pois: PoiSpec[] = [')
@@ -203,6 +265,38 @@ def emit_floor(fid, d, x0, y0, out_dir):
     lines.append('')
     open(os.path.join(out_dir, f'level{fid}.ts'), 'w').write('\n'.join(lines))
     print(f'level{fid}.ts: {len(d["rooms"])} rooms + {len(cfg["named"])} named regions, {len(d.get("desks", []))} desks')
+
+
+def resolve_overlaps(entries, min_area=2.0):
+    """Rooms never overlap. The traced polygons were reconciled, but arcs fitted afterwards
+    (and boxes, ellipses and hand shapes added here) can still bite a neighbour: each polygon
+    gives up whatever an entry of higher priority (enclosed rooms, then cores and named
+    regions, then open areas, then unnumbered rooms; earlier first within a rank) already
+    covers. A trimmed polygon keeps its arcs as finely flattened curves."""
+    from shapely.geometry import MultiPolygon, Polygon
+    from rooms import flatten_arcs
+    shape = lambda poly, extra: Polygon(flatten_arcs(poly), [xy(h) for h in extra.get('holes', [])]).buffer(0)
+    order = sorted(range(len(entries)), key=lambda i: (entries[i][0], i))
+    kept = []
+    for i in order:
+        prio, w, rid, cat, poly, extra = entries[i]
+        g = shape(poly, extra)
+        if isinstance(g, MultiPolygon):
+            g = max(g.geoms, key=lambda q: q.area)
+        cut = g
+        for other in kept:
+            if cut.intersects(other) and cut.intersection(other).area > min_area:
+                cut = cut.difference(other)
+                if isinstance(cut, MultiPolygon):
+                    cut = max(cut.geoms, key=lambda q: q.area)
+        if cut is not g and not cut.is_empty and cut.area > 0.2 * g.area:
+            cut = cut.simplify(0.2)
+            poly = [[round(float(x), 1), round(float(y), 1)] for x, y in cut.exterior.coords[:-1]]
+            holes = [[[round(float(x), 1), round(float(y), 1)] for x, y in r.coords[:-1]] for r in cut.interiors if Polygon(r).area >= 20]
+            extra = {**extra, 'holes': holes} if holes else {k: v for k, v in extra.items() if k != 'holes'}
+            entries[i] = (prio, w, rid, cat, poly, extra)
+            g = cut
+        kept.append(g)
 
 
 def clip_to(poly, outlines):
@@ -281,7 +375,7 @@ def region_at(unlabelled, x, y):
     import cv2
     import numpy as np
     # anything bigger than a big room is the unenclosed hall, not the room the point meant
-    dist = [(cv2.pointPolygonTest(np.array(xy(u['polygon']), np.float32), (float(x), float(y)), True), u) for u in unlabelled if u['area'] <= 150000]
+    dist = [(cv2.pointPolygonTest(np.array(xy(u['polygon']), np.float32), (float(x), float(y)), True), u) for u in unlabelled if u['area'] <= 150000 or u.get('atrium')]
     hits = [u for d, u in dist if d >= 0]
     if hits:
         return min(hits, key=lambda u: u['area'])
