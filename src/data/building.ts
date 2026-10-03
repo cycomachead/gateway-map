@@ -1,4 +1,5 @@
 import { pts, type XY } from './helpers';
+import { FLOOR_DEFINITIONS } from './floors';
 import { poisFrom, spacesFrom, type PoiSpec, type RoomSpec } from './gateway/floor';
 import { FRAME } from './gateway/frame';
 import * as l0 from './gateway/level0';
@@ -20,14 +21,9 @@ import type { Building, Floor, Space } from './types';
 /** What a generated `level*.ts` module exports (`desks` arrived later, so older modules may lack it). */
 type LevelModule = { outline: XY[]; islands: XY[][]; rooms: RoomSpec[]; pois: PoiSpec[]; desks?: XY[][] };
 
-const levels: ReadonlyArray<readonly [id: string, label: string, level: number, data: LevelModule]> = [
-  ['0', 'LL', 0, l0],
-  ['1', '1', 1, l1],
-  ['2', '2', 2, l2],
-  ['3', '3', 3, l3],
-  ['4', '4', 4, l4],
-  ['5', '5', 5, l5],
-];
+const levelData = { '0': l0, '1': l1, '2': l2, '3': l3, '4': l4, '5': l5 };
+const levels: ReadonlyArray<readonly [id: string, label: string, level: number, data: LevelModule]> =
+  FLOOR_DEFINITIONS.map(([id, label, level]) => [id, label, level, levelData[id]]);
 
 /** The floor shown on load: the street-level entrance floor. */
 export const DEFAULT_FLOOR_ID = '1';

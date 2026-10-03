@@ -1,11 +1,12 @@
 import './style.css';
-import { building, DEFAULT_FLOOR_ID } from './data/building';
+import { building } from './data/building';
 import type { Floor } from './data/types';
 import { validateBuilding } from './data/validate';
 import { bbox, pad, streetBox, unionBox } from './map/geometry';
 import { attachPanZoom } from './map/panzoom';
 import { renderFloor, spaceIdFromEvent } from './map/render';
 import { createStore } from './state';
+import { mountRouting, readRoute } from './routing';
 import { mountFilters } from './ui/filters';
 import { mountFloorSwitcher } from './ui/floors';
 import { mountPanel } from './ui/panel';
@@ -19,12 +20,12 @@ const $ = <T extends HTMLElement>(sel: string) => document.querySelector<T>(sel)
 const svg = $<HTMLElement>('#map') as unknown as SVGSVGElement;
 
 const store = createStore({
-  floorId: building.floors.some((f) => f.id === DEFAULT_FLOOR_ID) ? DEFAULT_FLOOR_ID : building.floors[0].id,
-  selectedSpaceId: null,
+  ...readRoute(),
   hoveredSpaceId: null,
   query: '',
   categories: new Set(),
 });
+mountRouting(store);
 
 const floorLabel = (id: string) => building.floors.find((f) => f.id === id)?.label ?? id;
 const panzoom = attachPanZoom(svg);
@@ -102,11 +103,12 @@ $('#zoom-fit').addEventListener('click', () => {
 
 // ---- Wire state → view ----------------------------------------------------
 store.subscribe((s, prev) => {
-  if (s.floorId !== mountedFloorId) mountFloor(s.floorId);
+  const floorChanged = s.floorId !== mountedFloorId;
+  if (floorChanged) mountFloor(s.floorId);
 
   syncSpaceClasses(s.selectedSpaceId, s.categories);
 
-  if (s.selectedSpaceId && s.selectedSpaceId !== prev.selectedSpaceId) {
+  if (s.selectedSpaceId && (floorChanged || s.selectedSpaceId !== prev.selectedSpaceId)) {
     const space = building.spaces.find((sp) => sp.id === s.selectedSpaceId);
     if (space) panzoom.fit(pad(bbox(space.polygon), 120));
   } else if (!s.selectedSpaceId && prev.selectedSpaceId) {

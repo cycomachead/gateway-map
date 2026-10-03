@@ -29,6 +29,20 @@ npm run test:a11y  # just the axe accessibility scans
 - One-time setup: in the repository settings, under **Pages**, set **Source** to
   **GitHub Actions**.
 
+## Floor and room URLs
+
+- Each floor has a path: `/floor-1` through `/floor-5`, plus `/floor-0` for the
+  Lower Level. Opening the site root selects `/floor-1`.
+- Selecting a room adds its space ID as a query parameter, for example
+  `/floor-4?room=4-4161`. Shared links and reloads restore the room selection;
+  browser Back and Forward restore previous floor and room selections.
+- Unknown rooms or rooms on a different floor are cleared from the URL. When
+  served by an SPA host, unknown floor paths fall back to Floor 1; static hosts
+  serve their usual 404 for paths that were not generated.
+- URLs respect the deployment base path: on GitHub Pages the example becomes
+  `/gateway-map/floor-4?room=4-4161`. The build emits an `index.html` for each floor
+  so these links also work when opened directly on a static host.
+
 ## Editing the map
 
 - Floors, spaces, and points of interest are assembled in `src/data/building.ts`; the
