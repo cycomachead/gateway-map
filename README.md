@@ -47,8 +47,8 @@ npm run test:a11y  # just the axe accessibility scans
 
 - Floors, spaces, and points of interest are assembled in `src/data/building.ts`; the
   per-floor data lives in `src/data/gateway/level{0..5}.ts` (`0` is the Lower Level).
-- **Every level is generated** from the CAD plan-view PDFs (`Gateway_Plan_View_10_2_2025-
-  Floor_*.pdf`, the One Workplace furniture plans) by `tools/trace_cad/`: the vector line work
+- **Every level is generated** from the CAD plan-view PDFs (`floorplan_floor-*_2025-10-02.pdf`
+  in `floorplans/architect-pdfs/floorplans/`, the One Workplace furniture plans) by `tools/trace_cad/`: the vector line work
   is rasterised, each room is flood-filled from its label on the plan (seeded through the
   door swing when the label sits in the corridor), open areas are partitioned between their
   labels, desks in the open areas are exported as plain rectangles, and the outline is the
@@ -64,7 +64,9 @@ npm run test:a11y  # just the axe accessibility scans
   (see `tools/trace_cad/README.md`), or edit the `.ts` file directly if you don't need to
   regenerate. A single floor can be regenerated on its own: `gen.py <pdf dir> <workdir> 4` then
   `emit_ts.py` keeps the shared frame from `frame.ts`.
-- `floorplans/` keeps the perspective-corrected photos of the wayfinding signs. The tracer
+- [`floorplans/README.md`](./floorplans/README.md) inventories all source PDFs, website images
+  and wayfinding-sign photos, with extracted lower-level room numbers from the teaching PDF.
+  Photos live in `floorplans/builsding-signs/`. The tracer
   registers a floor's sign onto the CAD outline and takes the piazzas' shape from it (the
   white band around the atrium on the sign), so those sweeping curves match the signs; the
   photos are also a handy cross-check for room names.
