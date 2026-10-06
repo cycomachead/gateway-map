@@ -146,3 +146,20 @@ room-number/seat-count key extracted from teaching PDF pages 3, 4 and 10.
 that the CAD furniture plan omits. Its wall polygons omit door swings and furniture notches
 while retaining the curved walls. The sign paths include the actual `builsding-signs/`
 directory. The lower-level sign mentioned in the ticket is absent from this checkout.
+
+The storage closets wedged between neighbouring classrooms (and the
+one between B1008 and B1009, via the floor's `blank` points) are left off the map, so the
+classrooms meet. B1040 is a five-walled room whose doors face B1026 on a straight corner wall.
+The two rounded open-study areas are numbered B1030 (west curve) and B1010 (inside the main
+stair) and drawn as ellipses fitted to their curved walls; the main stair is the band between
+B1010 and the stair's outer wall (`_ellipse` and `_band` in `floors.py`).
+
+The East Stair (Floors 1–4) is a `manual` four-sided shape around its flight and the opening
+beside it: the traced region ran out along the corridor by the facade.
+
+On Floor 1 the lecture halls 1210 and 1220 are the red outlines on pages 21 and 18 of the
+Teaching Spaces PDF, registered onto the CAD sheet with a similarity fitted on the structural
+columns along the halls (residual under 2 pt); 1220 gives way to 1210 where the outlines cross,
+and the drone lab 1230 is drawn from its walls below 1220. The storage rooms behind the halls
+are not shown: the East Hallway (`F1_EAST_HALLWAY`, a generous `manual` shape clipped to the
+outline and trimmed by the rooms) runs along the backs of all three to the southeast corner.

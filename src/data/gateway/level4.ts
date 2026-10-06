@@ -172,12 +172,12 @@ export const rooms: RoomSpec[] = [
   ['Southwest', 'sw-elevator-3', 'circulation', [[1563.3, 1067.5], [1512.1, 1073.2], [1517.2, 1115.5], [1568.0, 1109.9]], { name: 'Southwest Elevator 3', label: 'Elev.', tags: ['elevator'] }],
   ['Northeast', 'ne-stair', 'circulation', [[1298.8, 608.0], [1354.0, 597.0], [1332.0, 487.0], [1276.8, 498.0]], { name: 'Northeast Stair', label: 'Stair', tags: ['stairs'] }],
   ['Southwest', 'sw-stair', 'circulation', [[451.1, 1035.6], [460.0, 1107.0], [599.9, 1089.6], [591.1, 1018.2]], { name: 'Southwest Stair', label: 'Stair', tags: ['stairs'] }],
-  [undefined, 'east-stair', 'circulation', [[2455.1, 1001.7], [2418.3, 1035.7], [2527.4, 1153.8], [2564.2, 1119.8]], { name: 'East Stair', label: 'Stair', tags: ['stairs'] }],
   [undefined, 'atrium', 'circulation', [[1427.5, 920.1, -0.1145], [1283.7, 946.1, -0.2771], [1201.2, 900.7, -0.2771], [1228.4, 810.6, -0.1145], [1349.3, 728.5, -0.1145], [1493.2, 702.6, -0.2771], [1575.7, 748.0, -0.2771], [1548.5, 838.1, -0.1145]], { name: 'Atrium', label: 'Atrium', tags: ['atrium', 'stairs', 'open to below'] }],
   ['Northeast', 'ne-restroom', 'service', [[1255.4, 500.9], [1312.3, 490.9], [1332.0, 487.0], [1332.1, 487.5], [1429.5, 470.4], [1412.9, 375.5], [1238.7, 406.0]], { name: 'Restroom (NE)', label: 'WC', tags: ['restroom'] }],
   ['Northeast', 'ne-restroom-2', 'service', [[1234.0, 411.3], [1198.0, 420.2], [1211.8, 476.0], [1247.8, 467.1]], { name: 'Single-Occupancy Restroom (NE)', label: 'WC', tags: ['restroom', 'all gender'] }],
   ['Southwest', 'sw-restroom', 'service', [[1472.6, 1127.5], [1478.1, 1225.2], [1643.7, 1215.8], [1638.2, 1118.1]], { name: 'Restroom (SW)', label: 'WC', tags: ['restroom'] }],
   ['Southwest', 'sw-restroom-2', 'service', [[1665.0, 1116.1], [1679.0, 1105.3], [1678.6, 1100.8], [1676.9, 1094.7], [1674.9, 1092.0], [1676.3, 1088.2], [1661.4, 1087.2], [1645.3, 1039.1], [1591.3, 1044.4], [1598.8, 1120.3], [1638.2, 1118.1], [1638.2, 1118.8]], { name: 'Single-Occupancy Restroom (SW)', label: 'WC', tags: ['restroom', 'all gender'] }],
+  [undefined, 'east-stair', 'circulation', [[2436.0, 1092.0], [2521.0, 1209.0], [2584.0, 1178.0], [2474.0, 1058.0]], { name: 'East Stair', label: 'Stair', tags: ['stairs'] }],
 ];
 
 export const pois: PoiSpec[] = [
