@@ -70,11 +70,15 @@ also records a 5.23.24 meeting update.
 
 - Page 3 identifies the two rounded piazza/open-study areas and shows work-height tables,
   chairs and mobile markerboards. It does not supply room numbers for those areas.
+  The map numbers them B1030 (the curve on the west side) and B1010 (inside the main stair).
 - Page 4 identifies B1019 as an active learning classroom with rectangular tables and
   stackable chairs, and marks its storage closet and a nearby storage room.
 - Page 10 shows tablet-arm classroom seating and repeats the room-number key.
   Its comments request more whiteboard space in B1008/B1009 and consideration of a table
   layout in B1023; these are design requests, not confirmed room amenities.
+
+Pages 18 (1220, 150-seat lecture hall) and 21 (1210, 300-seat lecture hall) outline the two
+Floor 1 lecture halls in red dashes; the map uses those outlines for the hall shapes.
 
 The map uses the numbers and uses above, with simplified classroom walls from the October
 2025 CAD plan. `tools/trace_cad/floors.py` keeps these corrections reproducible; regeneration

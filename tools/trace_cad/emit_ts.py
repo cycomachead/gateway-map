@@ -206,6 +206,8 @@ def emit_floor(fid, d, x0, y0, out_dir):
         from rooms import flatten_arcs
         inside = unary_union([Polygon(flatten_arcs(o)).buffer(0) for o in d['outlines']])
         used = {id(r) for o in resolved for r in o[6]}
+        # closets the floor config leaves off the map
+        used |= {id(u) for u in (region_at(d['unlabelled'], bx, by) for bx, by in cfg['blank']) if u is not None}
         k = 0
         for u in sorted(d['unlabelled'], key=lambda u: -u['area']):
             if id(u) in used or u.get('atrium') or not cfg['unnamed'] <= u['area'] <= cfg['unnamed_max']:
