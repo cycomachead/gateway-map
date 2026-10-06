@@ -46,24 +46,85 @@ CORES = NE_ELEVATORS + SW_ELEVATORS + [NE_STAIR, SW_STAIR, EAST_STAIR, ATRIUM]
 LL_CORES = (_EL('ne', 'Northeast', [(2406.6, 856.1), (2488.8, 848.9), (2570.9, 841.7)])
             + _EL('sw', 'Southwest', [(2398.4, 1787.8), (2476.8, 1768.0), (2559.7, 1768.0)])
             + [(2295, 875, 'ne-stair', 'circulation', 'Northeast Stair', 'Stair', ['stairs']),
-               (2690, 1935, 'sw-restrooms', 'service', 'Restrooms (SW)', 'WC', ['restroom'])]
-            # the tiered teaching rooms along the curved band and the flat one in the middle
-            # carry no number on this plan
-            + [(x, y, f'classroom-{i}', 'classroom', f'Classroom {i} (Lower Level)', 'Classroom', ['classroom', 'teaching'])
-               for i, (x, y) in enumerate([(1073.7, 954.1), (1352.1, 1119.3), (1729.6, 1110.9), (2030.1, 987.0), (1539.4, 1594.2)], 1)])
-# The teaching rooms and the atrium landing on the Lower Level open onto the hall without
-# doors, so they cannot be traced as enclosed regions and stay unnamed.
+               (2690, 1935, 'sw-restrooms', 'service', 'Restrooms (SW)', 'WC', ['restroom'])])
+
+# Lower-level teaching room numbers: Teaching Spaces PDF, pages 4 and 10.
+# Wall geometry: October 2025 CAD sheet; door swings and furniture are omitted.
+LL_TEACHING = {
+    'B1026': ('CLASSROOM', [
+        (1163.9, 811.9), (928.0, 904.1), (932.0, 919.2), (936.5, 934.2), (941.5, 949.0),
+        (947.0, 963.6), (953.0, 978.0), (959.6, 992.2), (966.6, 1006.2), (974.1, 1019.9),
+        (982.1, 1033.3), (990.6, 1046.5), (999.5, 1059.3), (1008.9, 1071.8), (1018.7, 1084.0),
+        (1028.9, 1095.8), (1039.5, 1107.3), (1050.5, 1118.4), (1062.0, 1129.1), (1236.0, 916.0),
+    ]),
+    'B1022': ('CLASSROOM', [
+        (1062.0, 1129.1), (1081.5, 1144.3), (1101.7, 1158.7), (1122.3, 1172.4), (1143.6, 1185.2),
+        (1165.3, 1197.2), (1187.4, 1208.3), (1210.0, 1218.6), (1232.9, 1228.0), (1265.0, 1238.6),
+        (1297.5, 1248.0), (1330.3, 1256.2), (1363.4, 1263.0), (1396.8, 1268.6), (1430.3, 1272.8),
+        (1464.0, 1275.7), (1539.0, 1278.0), (1534.6, 988.0), (1264.3, 937.7),
+    ]),
+    'B1016': ('CLASSROOM', [
+        (1548.3, 988.7), (1544.1, 1278.0), (1564.6, 1278.5), (1585.2, 1278.4), (1605.7, 1277.5),
+        (1626.2, 1275.8), (1646.7, 1273.4), (1667.0, 1270.3), (1701.1, 1265.3), (1735.0, 1259.0),
+        (1768.6, 1251.6), (1802.0, 1243.0), (1835.8, 1233.0), (1869.2, 1221.8), (1902.1, 1209.4),
+        (1934.6, 1195.8), (1966.6, 1181.0), (1998.0, 1165.1), (1847.9, 917.9),
+    ]),
+    'B1012': ('CLASSROOM', [
+        (2004.3, 812.8), (1880.0, 900.1), (1998.0, 1165.1), (2033.5, 1144.4), (2068.1, 1122.4),
+        (2101.8, 1099.0), (2134.6, 1074.3), (2166.4, 1048.3), (2197.1, 1021.0),
+    ]),
+    'B1019': ('ACTIVE LEARNING CLASSROOM', [
+        (1233.9, 1463.7), (1280.5, 1453.2), (1327.4, 1444.4), (1374.6, 1437.3), (1422.0, 1432.0),
+        (1469.6, 1428.3), (1517.3, 1426.4), (1565.0, 1426.2), (1612.7, 1427.8), (1660.3, 1431.1),
+        (1707.8, 1436.0), (1755.0, 1442.8), (1797.9, 1451.0), (1797.9, 1730.0), (1812.0, 1730.0),
+        (1811.7, 1765.6), (1269.6, 1765.6), (1269.6, 1481.5),
+    ]),
+    'B1023': ('CLASSROOM', [
+        (1026.0, 1922.2), (1025.7, 1631.0), (1256.5, 1631.0), (1256.6, 1922.0),
+    ]),
+    'B1015': ('CLASSROOM', [
+        (1825.6, 1458.9), (1858.6, 1466.8), (1891.2, 1475.8), (1923.5, 1485.9), (1955.4, 1497.2),
+        (1986.9, 1509.6), (2018.0, 1523.1), (2019.0, 1756.7), (1829.7, 1756.7),
+    ]),
+    'B1013': ('GROUP STUDY', [
+        (2027.1, 1529.1), (2068.2, 1548.1), (2108.6, 1568.7), (2148.2, 1590.7), (2187.0, 1614.1),
+        (2225.0, 1638.9), (2262.0, 1665.1), (2261.9, 1755.4), (2027.0, 1755.2),
+    ]),
+    'B1008': ('CLASSROOM', [
+        (2616.3, 1024.8), (2619.9, 1046.0), (2633.0, 1057.0), (2635.4, 1057.1), (2637.7, 1057.2),
+        (2640.1, 1057.4), (2642.4, 1057.6), (2644.7, 1058.0), (2647.0, 1058.4), (2649.3, 1059.0),
+        (2651.6, 1059.6), (2653.9, 1060.2), (2656.1, 1061.0), (2658.3, 1061.8), (2660.5, 1062.8),
+        (2662.6, 1063.7), (2664.7, 1064.8), (2666.7, 1066.0), (2668.8, 1067.2), (2670.7, 1068.5),
+        (2672.7, 1069.8), (2674.5, 1071.2), (2676.4, 1072.7), (2678.1, 1074.3), (2679.8, 1075.9),
+        (2681.5, 1077.6), (2683.1, 1079.3), (2684.6, 1081.1), (2686.1, 1082.9), (2687.5, 1084.8),
+        (2688.8, 1086.7), (2690.1, 1088.7), (2691.3, 1090.7), (2692.4, 1092.8), (2693.5, 1094.9),
+        (2694.5, 1097.1), (2695.3, 1099.2), (2696.2, 1101.4), (2696.9, 1103.7), (2697.6, 1105.9),
+        (2704.5, 1118.1), (2711.0, 1130.5), (2717.0, 1143.2), (2722.6, 1156.0), (2727.8, 1169.0),
+        (2732.8, 1184.3), (2737.2, 1199.7), (2741.1, 1215.3), (2744.3, 1231.1), (2747.0, 1246.9),
+        (2782.0, 1270.1), (2888.8, 1260.9), (2866.9, 1007.5),
+    ]),
+    'B1009': ('CLASSROOM', [
+        (2856.1, 1337.1), (2748.1, 1337.1), (2746.2, 1347.2), (2744.0, 1357.3), (2741.5, 1367.2),
+        (2738.6, 1377.1), (2735.3, 1386.9), (2731.7, 1396.6), (2727.8, 1406.1), (2723.5, 1415.5),
+        (2719.0, 1424.7), (2714.0, 1433.7), (2708.8, 1442.6), (2703.3, 1451.3), (2697.5, 1459.8),
+        (2691.3, 1468.1), (2684.9, 1476.1), (2678.2, 1484.0), (2671.3, 1491.6), (2664.0, 1498.9),
+        (2656.6, 1506.0), (2648.8, 1512.8), (2640.9, 1519.3), (2632.7, 1525.6), (2624.3, 1531.6),
+        (2615.7, 1537.2), (2606.9, 1542.6), (2597.9, 1547.6), (2588.8, 1552.4), (2577.5, 1595.4),
+        (2891.8, 1589.2), (2890.9, 1362.1),
+    ]),
+}
 
 FLOORS = {
     # The Lower Level sheet is at 1/8" = 1' and rotated; the transform was fitted on the six
     # elevator shafts (X-marked squares) shared with the upper floors (residual < 0.1 pt).
     '0': dict(pdf='Lower_Level', label='LL', level=0, label_sizes=(7.0, 8.0), number_re=r'^B\d{4}[A-Z]?$',
               transform=(0.63577, -6.9324, -153.26, 589.22), named=LL_CORES, exits=True, min_room=1800,
-              # the teaching rooms and service rooms carry no number on this plan (the sheet is
+              # The service rooms carry no number on this plan (the sheet is
               # drawn larger, so the size limits are too); B1335's label sits in its doorway
               unnamed=4000, unnamed_max=90000,
               # The labels sit at the rooms' doors: the rooms are drawn by hand from the walls.
-              hand={'B1335': [(1456, 2002), (1596, 2002), (1596, 2214), (1456, 2214)],
+              hand={**LL_TEACHING,
+                    'B1335': [(1456, 2002), (1596, 2002), (1596, 2214), (1456, 2214)],
                     'B1342': [(1362, 1769), (1548, 1769), (1548, 1925), (1362, 1925)],
                     'B1346': [(1262, 1769), (1356, 1769), (1356, 1925), (1262, 1925)],
                     'B1336': [(1556, 1769), (1737, 1769), (1737, 1926), (1556, 1926)],
@@ -99,13 +160,13 @@ FLOORS = {
     # Floors 2 and 3 follow floor 4 (below): the research labs are boxes, the kitchens and
     # meeting rooms with a pilaster or a curved wall are four-cornered. Stairs wind down inside
     # the atrium's rail on these floors, so the rail's ellipse is given.
-    '2': dict(pdf='2', label='2', level=2, named=CORES + NE_RESTROOMS + SW_RESTROOMS, sign=('level2-whole-floor.jpg', (0.44, 0.52)),
+    '2': dict(pdf='2', label='2', level=2, named=CORES + NE_RESTROOMS + SW_RESTROOMS, sign=('builsding-signs/level2-whole-floor.jpg', (0.44, 0.52)),
               box={'2184', '2192', '2322', '2404', '2408'},
               quad={'2130', '2133', '2219', '2228', '2345', '2355', '2361', '2389', '2431', '2445'},
               hand={'2310': [(1655, 1652), (1770, 1648), (1816, 1822), (1666, 1827)],
                     '2161': [(2128, 469), (2203, 452), (2255, 514), (2168, 594), (2132, 545)]},
               atrium=(1460, 1260, 252, 152, -14)),
-    '3': dict(pdf='3', label='3', level=3, named=CORES + NE_RESTROOMS + SW_RESTROOMS, sign=('level3-whole-floor.jpg', (0.44, 0.52)),
+    '3': dict(pdf='3', label='3', level=3, named=CORES + NE_RESTROOMS + SW_RESTROOMS, sign=('builsding-signs/level3-whole-floor.jpg', (0.44, 0.52)),
               box={'3131', '3184', '3192', '3322', '3406'},
               quad={'3130', '3161', '3219', '3350', '3355', '3375', '3431', '3447'},
               # the labs 3184/3192 are split by benches drawn as walls; 3310 opens onto 3340
@@ -120,7 +181,7 @@ FLOORS = {
     # Floors 2-4 share the plan around the atrium, and there is no level 4 sign photo.
     '4': dict(pdf='4', label='4', level=4, named=CORES + NE_RESTROOMS + SW_RESTROOMS,
               box={'4131', '4184', '4192', '4408', '4322'}, quad={'4130', '4350', '4355', '4375', '4310'},
-              sign=('level3-whole-floor.jpg', (0.44, 0.52))),
+              sign=('builsding-signs/level3-whole-floor.jpg', (0.44, 0.52))),
     # Floor 5 is set back: the indoor blocks stand on a paved roof terrace inside the parapet
     # (seeded on its pavers and walkways). The passage between the restroom blocks of the south
     # bar is sealed so the terrace does not run into the building. The oval is the atrium's
@@ -138,6 +199,8 @@ FLOORS = {
 }
 
 for f in FLOORS.values():
+    sheet = 'lower-level' if f['level'] == 0 else str(f['level'])
+    f['source'] = f'floorplan_floor-{sheet}_2025-10-02.pdf'
     f.setdefault('label_sizes', (3.5, 5.0))
     f.setdefault('number_re', r'^(\d{4}[A-Z]?|\dCORR\d{2})$')
     f.setdefault('seeds', {})

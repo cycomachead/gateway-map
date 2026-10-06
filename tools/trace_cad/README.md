@@ -1,13 +1,15 @@
 # trace_cad — floor data from the CAD plan-view PDFs
 
 Generates `src/data/gateway/level{0..5}.ts` and `frame.ts` from the One Workplace furniture
-plans (`Gateway_Plan_View_10_2_2025-Floor_{Lower_Level,1,2,3,4,5}.pdf`, one 48"×36" vector sheet
-each; not committed because of their size). Requires `pymupdf`, `numpy`, `opencv-python-headless`,
-`scipy`, `scikit-image`.
+plans (`floorplan_floor-{lower-level,1,2,3,4,5}_2025-10-02.pdf`, one 48"×36" vector sheet
+each, committed in `floorplans/architect-pdfs/floorplans/`). Requires `pymupdf`, `numpy`, `opencv-python-headless`,
+`scipy`, `scikit-image`, `shapely`.
+
+Run from `tools/trace_cad/` with a temporary workdir outside the repository.
 
 ```sh
-python3 gen.py <dir with the PDFs> <workdir>          # extract + segment every floor (~10 min)
-python3 gen.py <dir with the PDFs> <workdir> 3        # just floor 3
+python3 gen.py ../../floorplans/architect-pdfs/floorplans <workdir>          # extract + segment every floor (~10 min)
+python3 gen.py ../../floorplans/architect-pdfs/floorplans <workdir> 3        # just floor 3
 python3 emit_ts.py <workdir> ../../src/data/gateway   # write the TypeScript modules
 ```
 
@@ -135,3 +137,12 @@ RAM, so floors are processed one at a time.
    so each polygon gives up what a higher-priority one covers (enclosed rooms, then cores and
    named regions, then open areas, then unnumbered rooms). Coordinates are PDF points of the upper-floor sheets,
    shifted so the building starts near the origin (`frame.ts`).
+
+## Source inventory and lower-level corrections
+
+See [the reference inventory](../../floorplans/README.md) for every source file and the
+room-number/seat-count key extracted from teaching PDF pages 3, 4 and 10.
+`LL_TEACHING` in `floors.py` supplies the nine classroom numbers and group-study room B1013
+that the CAD furniture plan omits. Its wall polygons omit door swings and furniture notches
+while retaining the curved walls. The sign paths include the actual `builsding-signs/`
+directory. The lower-level sign mentioned in the ticket is absent from this checkout.

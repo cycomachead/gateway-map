@@ -76,7 +76,9 @@ Each step should leave `main` in a working, deployable state.
 - Room names and categories come from the plan (faculty office, focus, huddle, meeting,
   lab, open office, piazza, social kitchen ...); stairs, elevators, restrooms, the atrium and
   the lecture hall are named by hand in `tools/trace_cad/floors.py`.
-- Known gaps: the Lower Level, Floor 1 and Floor 5 plans only number some rooms (the rest are
+- Lower-level teaching rooms are numbered from the teaching-spaces PDF (pages 4 and 10),
+  with cleaned CAD wall shapes. See `floorplans/README.md` for the source inventory and room key.
+- Known gaps: the Lower Level service rooms, Floor 1 and Floor 5 plans only number some rooms (the rest are
   drawn as unnumbered rooms, a few of them irregular where fixtures break up the fill); a few labels whose door could not be matched are stored as open areas; open-area
   boundaries are an approximation (nearest label), not walls.
 - Fill in room metadata (departments, capacity, hours, photos).
