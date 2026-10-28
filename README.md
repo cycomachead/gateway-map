@@ -44,6 +44,19 @@ npm run occupants  # re-import faculty office assignments from the EECS director
   `/gateway-map/floor-4?room=4-4161`. The build emits an `index.html` for each floor
   so these links also work when opened directly on a static host.
 
+## Keyboard shortcuts
+
+Press `?` (or the **?** button in the header) for the full list. In short: `Ctrl`+`/` or
+`Ctrl`+`F` (`⌘` on a Mac) jumps to the search box, `+` and `−` zoom, `1`–`5` and `B` switch
+floors (`B` is the Lower Level), the arrow keys move keyboard focus to the next room in that
+direction and pan to keep it in view, `Enter` opens the focused room, and `Esc` goes back to
+the floor. The shortcuts dialog has a *Require Shift for single-letter shortcuts* preference
+(saved in `localStorage`) for people whose screen reader uses single letters to move around
+the page; with it on, `B` alone does nothing and `Shift`+`B` goes to the Lower Level. Every
+shortcut either moves focus to the control it acted on (floor button, search box, room) or
+reports what happened through the polite live region `#announcer`. The **About** button
+credits the author and the language models that helped build the site.
+
 ## Editing the map
 
 - Floors, spaces, and points of interest are assembled in `src/data/building.ts`; the

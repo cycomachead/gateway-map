@@ -143,6 +143,18 @@ button { font: inherit; color: inherit; }
 .chip--amenity { --c: var(--c-amenity); }
 .chip--service { --c: var(--c-service); }
 
+.topbar__actions { display: flex; align-items: center; gap: 6px; margin-left: auto; }
+.text-btn {
+  height: 34px; padding: 0 12px; border: 1px solid var(--border); border-radius: 8px;
+  background: var(--surface-2); cursor: pointer; font-size: 14px;
+}
+.text-btn:hover { background: var(--accent-soft); }
+.ctl--round {
+  width: 34px; height: 34px; min-width: 0; padding: 0; border: 1px solid var(--border); border-radius: 50%;
+  background: var(--surface-2); font-size: 16px;
+}
+.ctl--round:hover { background: var(--accent-soft); }
+
 /* ---- Map stage --------------------------------------------------------- */
 .stage { position: relative; overflow: hidden; background: var(--bg); }
 .map { width: 100%; height: 100%; display: block; touch-action: none; cursor: grab; }
@@ -179,8 +191,11 @@ button { font: inherit; color: inherit; }
 .space--circulation .space__shape { fill-opacity: 0.5; stroke: var(--floor-stroke); stroke-dasharray: 4 3; }
 .space--circulation .space__label { font-size: 11px; font-weight: 500; fill: var(--text-muted); }
 
-.space:hover .space__shape, .space:focus-visible .space__shape { fill-opacity: 0.5; stroke-width: 2.5; }
+.space:hover .space__shape { fill-opacity: 0.5; stroke-width: 2.5; }
+/* Keyboard focus (Tab or the arrow keys) gets an unmistakable ring in the accent colour. */
+.space:focus-visible .space__shape { fill-opacity: 0.5; stroke: var(--accent); stroke-width: 5; stroke-dasharray: 10 6; }
 .space.is-selected .space__shape { fill-opacity: 0.6; stroke-width: 3.5; stroke: var(--text); }
+.space.is-selected:focus-visible .space__shape { stroke: var(--accent); }
 .space.is-dimmed { pointer-events: none; }
 .space.is-dimmed .space__shape { fill-opacity: 0.06; stroke-opacity: 0.25; }
 .space.is-dimmed .space__label { opacity: 0.3; }
@@ -261,6 +276,37 @@ button { font: inherit; color: inherit; }
 .swatch--amenity { --c: var(--c-amenity); }
 .swatch--service { --c: var(--c-service); }
 .muted { color: var(--text-muted); padding: 8px 10px; }
+
+/* ---- Dialogs (About, Keyboard shortcuts) ------------------------------- */
+.dialog {
+  width: min(540px, calc(100vw - 32px)); max-height: calc(100vh - 32px); padding: 24px;
+  border: 1px solid var(--border); border-radius: var(--radius);
+  background: var(--surface); color: var(--text); box-shadow: var(--shadow);
+}
+.dialog::backdrop { background: rgba(10, 12, 20, 0.45); }
+.dialog:focus { outline: none; } /* focus lands here on open so the title is read; no ring needed */
+.dialog__title { margin: 0 0 12px; font-size: 20px; }
+.dialog__group {
+  margin: 18px 0 8px; font-size: 12px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-muted);
+}
+.dialog p { margin: 0 0 12px; line-height: 1.5; }
+.dialog a { color: var(--accent); }
+.dialog__hint { color: var(--text-muted); font-size: 13px; margin: 6px 0 0 26px; }
+.dialog__actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px; }
+
+.shortcuts { display: grid; grid-template-columns: auto 1fr; gap: 8px 16px; align-items: center; margin: 0; }
+.shortcuts dt, .shortcuts dd { margin: 0; }
+.shortcuts dt { white-space: nowrap; }
+kbd {
+  display: inline-block; min-width: 24px; padding: 2px 6px; text-align: center;
+  border: 1px solid var(--border); border-bottom-width: 2px; border-radius: 5px; background: var(--surface-2);
+  font: 600 12px/1.4 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+.kbd-plus { margin: 0 3px; color: var(--text-muted); }
+.muted-inline { margin: 0 4px; font-size: 12px; color: var(--text-muted); }
+.pref { margin-top: 20px; padding-top: 14px; border-top: 1px solid var(--border); }
+.pref__label { display: flex; align-items: center; gap: 8px; cursor: pointer; }
+.pref__label input { width: 18px; height: 18px; margin: 0; accent-color: var(--accent); }
 
 @media (prefers-reduced-motion: reduce) {
   * { transition: none !important; }

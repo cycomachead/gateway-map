@@ -1,4 +1,4 @@
-import type { SpaceCategory } from './data/types';
+import type { Space, SpaceCategory } from './data/types';
 
 export interface AppState {
   floorId: string;
@@ -8,6 +8,10 @@ export interface AppState {
   /** Empty set = show everything. */
   categories: Set<SpaceCategory>;
 }
+
+/** Category filters never hide circulation: corridors and stairs stay as landmarks. */
+export const isFilteredOut = (space: Space, categories: Set<SpaceCategory>) =>
+  categories.size > 0 && space.category !== 'circulation' && !categories.has(space.category);
 
 type Listener = (state: AppState, prev: AppState) => void;
 

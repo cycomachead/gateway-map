@@ -21,4 +21,11 @@ export function mountFloorSwitcher(root: HTMLElement, floors: Floor[], store: St
   store.subscribe((s) => {
     for (const [id, b] of buttons) b.setAttribute('aria-pressed', String(id === s.floorId));
   });
+
+  return {
+    /** Put keyboard focus on a floor's button (after a shortcut changed the floor). */
+    focus(floorId: string) {
+      buttons.get(floorId)?.focus();
+    },
+  };
 }
