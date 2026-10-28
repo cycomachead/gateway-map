@@ -190,6 +190,8 @@ button { font: inherit; color: inherit; }
   paint-order: stroke; stroke: var(--floor-fill); stroke-width: 3px; stroke-linejoin: round;
 }
 .space__label-name { font-size: 8.5px; font-weight: 500; }
+.space__icon { fill: var(--text); pointer-events: none; }
+.space.is-dimmed .space__icon { opacity: 0.3; }
 
 .poi__dot { fill: var(--surface); stroke: var(--floor-stroke); stroke-width: 1.5; }
 .poi__glyph { font-size: 12px; font-weight: 700; fill: var(--text); pointer-events: none; }
@@ -226,6 +228,8 @@ button { font: inherit; color: inherit; }
 @media (max-width: 800px) { .panel { border-left: 0; border-top: 1px solid var(--border); } }
 
 .panel__eyebrow { font-size: 12px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-muted); }
+.panel__head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: 4px 0 10px; }
+.panel__head .panel__title { margin: 0; }
 .panel__title { margin: 4px 0 10px; font-size: 22px; }
 .panel__desc { color: var(--text-muted); line-height: 1.45; margin: 0 0 14px; }
 .facts { display: grid; grid-template-columns: auto 1fr; gap: 6px 14px; margin: 0 0 18px; }
@@ -241,8 +245,16 @@ button { font: inherit; color: inherit; }
   background: var(--surface-2); cursor: pointer;
 }
 .btn:hover { background: var(--accent-soft); }
+.btn--toggle { font-size: 13px; padding: 6px 10px; white-space: nowrap; }
+.btn--toggle[aria-pressed='true'] { background: var(--accent); border-color: var(--accent); color: #fff; }
 
 .space-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
+.space-list--floors { gap: 14px; }
+.space-list__heading {
+  margin: 0 0 4px; padding: 0 10px; font-size: 12px; font-weight: 600;
+  letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-muted);
+}
+.space-list__floor.is-current .space-list__heading { color: var(--accent); }
 .list-btn {
   display: flex; align-items: center; gap: 10px; width: 100%; text-align: left;
   padding: 8px 10px; border: 0; border-radius: 7px; background: transparent; cursor: pointer;

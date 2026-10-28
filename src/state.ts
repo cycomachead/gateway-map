@@ -7,6 +7,8 @@ export interface AppState {
   query: string;
   /** Empty set = show everything. */
   categories: Set<SpaceCategory>;
+  /** The side panel lists the rooms of every floor, not just the current one. */
+  allFloors: boolean;
 }
 
 type Listener = (state: AppState, prev: AppState) => void;

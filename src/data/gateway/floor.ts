@@ -1,11 +1,12 @@
 import { pts, type XY } from '../helpers';
-import type { Poi, PoiKind, Space, SpaceCategory } from '../types';
+import type { Poi, PoiKind, Space, SpaceCategory, SpaceIcon } from '../types';
 
 export type Wing = 'Northeast' | 'Southwest';
 
 export type RoomExtra = {
   name?: string;
   label?: string;
+  icon?: SpaceIcon;
   description?: string;
   tags?: string[];
   holes?: XY[][];
@@ -35,6 +36,7 @@ export function makeSpace(floorId: string, wing: Wing | undefined, id: string, c
     id: `${floorId}-${id.toLowerCase().replace(/[\s’']+/g, '-')}`,
     name: extra.name ?? `${kindName[category] ?? 'Room'} ${id}`,
     label: extra.label ?? number ?? extra.name ?? id,
+    ...(extra.icon ? { icon: extra.icon } : {}),
     floorId,
     category,
     wing,

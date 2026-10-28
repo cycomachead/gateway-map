@@ -10,8 +10,8 @@ network-of-gateways dataset by swapping the data files.
 - Fast, static site (no backend) that can be hosted on GitHub Pages.
 - Data-driven: floors, spaces, and points of interest live in plain JSON/TS files,
   so non-developers can update content without touching rendering code.
-- Interactive: pan/zoom, hover and click on spaces, floor switching, search,
-  category filters, and shareable deep links.
+- Interactive: pan/zoom, hover and click on spaces, floor switching (or every floor's
+  rooms listed at once), search, category filters, and shareable deep links.
 - Accessible and mobile-friendly.
 
 ## Tech choices
@@ -82,7 +82,10 @@ Each step should leave `main` in a working, deployable state.
   drawn as unnumbered rooms, a few of them irregular where fixtures break up the fill); a few labels whose door could not be matched are stored as open areas; open areas are
   the furnished zones of their labels (desk clusters, lounge groups), not walls, and the
   hallways between them are left blank.
-- Fill in room metadata (departments, capacity, hours, photos).
+- Departments come from the colour space-assignment sheets (`tools/departments/`); each room
+  is tagged with the department shaded over it, and Level 1's reservable meeting rooms are
+  tagged too.
+- Fill in the remaining room metadata (capacity, hours, photos).
 
 ### 9. Quality & delivery
 - Vitest unit tests for data validation, search, and geometry helpers.

@@ -42,7 +42,8 @@ test.describe('faculty offices', () => {
     for (const part of name.split(' ')) await expect(label).toContainText(part);
     expect(await label.locator('.space__label-name').count()).toBeGreaterThan(0);
 
-    await expect(page.locator(`#panel [data-space-id="${spaceId}"] .list-btn__who`)).toHaveText(names.join(', '));
+    // The list line reads "names · department" when the room has a department too.
+    await expect(page.locator(`#panel [data-space-id="${spaceId}"] .list-btn__who`)).toContainText(names.join(', '));
     await space.hover();
     await expect(page.locator('#tooltip')).toContainText(name);
   });

@@ -1,5 +1,5 @@
 import './style.css';
-import { building, unplacedOccupantRooms } from './data/building';
+import { building, unplacedDepartmentRooms, unplacedOccupantRooms } from './data/building';
 import type { Floor } from './data/types';
 import { validateBuilding } from './data/validate';
 import { bbox, pad, streetBox, unionBox } from './map/geometry';
@@ -16,6 +16,7 @@ import { mountSearchBox } from './ui/search';
 const problems = [
   ...validateBuilding(building),
   ...unplacedOccupantRooms.map((n) => `Occupants listed for room "${n}", which is not on any floor`),
+  ...unplacedDepartmentRooms.map((id) => `Department listed for space "${id}", which is not on any floor`),
 ];
 if (problems.length) console.error('Building data problems:\n' + problems.join('\n'));
 
@@ -28,6 +29,7 @@ const store = createStore({
   hoveredSpaceId: null,
   query: '',
   categories: new Set(),
+  allFloors: false,
 });
 mountRouting(store);
 

@@ -63,8 +63,9 @@ RAM, so floors are processed one at a time.
      Enclosed rooms keep their shape, then the cores, then the open areas, which also snap to
      their neighbours to close hairline gaps. A room standing inside an open area becomes a
      hole in it (`holes`, drawn with an even-odd fill). Named cores that resolve to one
-     region (the three elevator shafts of a bank) are split between their points, and
-     restrooms, elevators and stairs are emitted as boxes aligned with their longest wall.
+     region (the three elevator shafts of a bank) are drawn as equal squares side by side
+     along the bank's axis (a third of its length each), and restrooms and stairs are
+     emitted as boxes aligned with their longest wall.
    - The atrium is the ellipse fitted to its traced outline. Piazzas and porches (and any
      label in the floor's `smooth` set) are drawn as sweeping shapes: their lounge groups are
      joined across the walkways between them (an 81 px closing), thin tails opened away, and
@@ -168,6 +169,13 @@ RAM, so floors are processed one at a time.
    spike a cut leaves behind is removed. Coordinates are PDF points of the upper-floor sheets,
    shifted so the building starts near the origin (`frame.ts`); the frame is kept across reruns
    while the building still fits in it (`--reframe` recomputes it).
+
+## Departments
+
+The colour space-assignment sheets (`space-assignments_floor-*_2026-06-21.pdf`) are the same
+line work with each department's rooms shaded; they are not traced. `tools/departments/`
+lays their shading over the emitted rooms and writes `departments.ts` (`npm run departments`),
+so rerun it after regenerating a floor.
 
 ## Source inventory and lower-level corrections
 
