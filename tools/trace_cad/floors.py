@@ -25,6 +25,8 @@ All coordinates are PDF points of that floor's sheet.
 `terrace`    seed points on a roof terrace's pavers or walkways: the deck becomes one open area.
 `exits`      detect exterior doors (door arcs on the outline) and emit them as entrance POIs.
 `blank`      points inside unlabelled regions that are left off the map (closets between rooms).
+`rename`     label id -> room name used instead of the plan's (for rooms whose use has changed
+             since the furniture plan was drawn); the number stays the label.
 """
 import math
 
@@ -206,6 +208,8 @@ FLOORS = {
               manual=[EAST_STAIR],
               # 1420's label sits on its tables: it is named below
               skip={'1420'},
+              # the plan's "Project Rm." 1456 is the TA printer room
+              rename={'1456': 'TA PRINTER ROOM'},
               # The two lecture halls carry no number on this plan (their tiers split them into
               # stripes) and the drone lab's label sits at its door: drawn by hand. The halls are
               # the red outlines of the Teaching Spaces PDF (1210 on page 21, 1220 on page 18),
@@ -287,6 +291,7 @@ for f in FLOORS.values():
     f.setdefault('unnamed_max', 40000)
     f.setdefault('terrace', [])
     f.setdefault('blank', [])
+    f.setdefault('rename', {})
 
 
 # ---------------------------------------------------------------------------
@@ -309,7 +314,7 @@ def category(name: str, id_: str) -> str:
         return 'meeting'
     if has('KITCHEN', 'LOUNGE', 'LACTATION', 'MEDITATION', 'CAFE') or (has('GREEN') and has('ROOM')):
         return 'amenity'
-    if has('HELP', 'STORAGE', 'SHIPPING', 'DAS', 'RECEPTION', 'MECH', 'ELEC', 'FACILITY'):
+    if has('HELP', 'STORAGE', 'SHIPPING', 'DAS', 'RECEPTION', 'MECH', 'ELEC', 'FACILITY', 'PRINTER', 'COPY'):
         return 'service'
     if has('STUDY', 'STUDENT', 'HOURS'):
         return 'study'
@@ -327,7 +332,7 @@ TITLE_FIXES = {
 ADD_ROOM = {'Focus', 'Huddle', 'Small Meeting', 'Medium Meeting', 'Large Meeting', 'Extra Large Meeting', 'Meeting', 'Lactation', 'Meditation', 'Green'}
 
 
-ACRONYMS = {'It': 'IT', 'Hci': 'HCI', 'Das': 'DAS', 'Mri': 'MRI'}
+ACRONYMS = {'It': 'IT', 'Hci': 'HCI', 'Das': 'DAS', 'Mri': 'MRI', 'Ta': 'TA'}
 
 
 def display_name(name: str, id_: str) -> str:

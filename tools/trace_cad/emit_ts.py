@@ -140,6 +140,8 @@ def emit_floor(fid, d, x0, y0, out_dir):
         seen[rid] = seen.get(rid, 0) + 1
         if seen[rid] > 1:
             rid = f"{rid}-{seen[rid]}"
+        if r['id'] in cfg['rename']:  # a room whose use differs from the plan's label
+            r = {**r, 'name': cfg['rename'][r['id']]}
         cat = category(r['name'], r['id'])
         name = display_name(r['name'], r['id']) if r['id'] != 'terrace' else 'Roof Terrace'
         w = wing(r['id'])
@@ -264,6 +266,8 @@ def emit_floor(fid, d, x0, y0, out_dir):
             taken = taken.union(g)
             entries.append((3, None, f'room-{k}', 'service', poly, {'name': 'Room', 'label': '', 'tags': ['unnumbered']}))
         print(f'  floor {fid}: {k} unnumbered rooms')
+    n_walls, n_rooms, worst = align_walls(entries, d['outlines'])
+    print(f'  floor {fid}: {n_walls} walls of {n_rooms} rooms turned parallel to their neighbours (largest turn {worst:.1f}°)')
     resolve_overlaps(entries)
     for _, w, rid, cat, poly, extra in entries:
         if extra.get('holes'):
@@ -304,12 +308,158 @@ def tidy_room(poly):
     return [[round(float(x) + x0, 1), round(float(y) + y0, 1)] for x, y in fit]
 
 
+ALIGN_ANGLE = 6.0    # degrees; walls further apart in angle are genuinely different walls
+ALIGN_DIST = 8.0     # px; perpendicular offset between the two faces of a partition (plus fitting noise)
+ALIGN_DIST_OUT = 14.0  # px; a room's exterior wall sits a wall thickness (10 px) inside the outline
+ALIGN_GAP = 25.0     # px; collinear walls this far apart along their line (a doorway) still share it
+ALIGN_MIN = 12.0     # px; shorter edges are curve pieces or notches, not walls
+ALIGN_SHIFT = 6.0    # px; a corner may move this far when its walls are turned
+
+
+def align_walls(entries, outlines):
+    """Walls of neighbouring rooms that are nearly parallel are made exactly parallel. Rooms are
+    fitted one by one, so the two faces of a shared partition (or the exterior walls of a row of
+    offices along a facade) come out a degree or two apart and the gap between them is a wedge.
+    Straight edges of different polygons that run within `ALIGN_ANGLE` of each other, lie within
+    `ALIGN_DIST` of each other's line and overlap along it (or stop within `ALIGN_GAP`, a
+    doorway) are grouped; each group is turned about the midpoints of its edges to one angle,
+    the length-weighted mean of its edges' tilts (the plain midpoint for two walls of a kind).
+    The outline is a fixed reference: a group containing a facade takes the facade's angle.
+    Corners are rebuilt as the intersections of the turned walls (a corner next to an arc or a
+    near-collinear jog is projected onto the turned wall instead). Holes are left alone.
+    Returns (edges turned, polygons touched, largest turn in degrees)."""
+    import numpy as np
+    from rooms import _intersect
+    polys = [[list(p) for p in e[4]] for e in entries]
+    owner, idx, A, B, fixed = [], [], [], [], []
+
+    def collect(poly, k, fix):
+        n = len(poly)
+        for i in range(n):
+            p, q = poly[i], poly[(i + 1) % n]
+            if len(p) == 3 and p[2]:
+                continue
+            a, b = np.array(p[:2], float), np.array(q[:2], float)
+            if np.linalg.norm(b - a) < ALIGN_MIN:
+                continue
+            owner.append(k)
+            idx.append(i)
+            A.append(a)
+            B.append(b)
+            fixed.append(fix)
+    for k, poly in enumerate(polys):
+        collect(poly, k, False)
+    for j, o in enumerate(outlines):
+        collect(o, -1 - j, True)
+    if len(A) < 2:
+        return 0, 0, 0.0
+    owner, idx, fixed = np.array(owner), np.array(idx), np.array(fixed, bool)
+    A, B = np.array(A), np.array(B)
+    M, D = (A + B) / 2, B - A
+    L = np.linalg.norm(D, axis=1)
+    U = D / L[:, None]
+    N = np.column_stack([-U[:, 1], U[:, 0]])
+    ang = np.degrees(np.arctan2(U[:, 1], U[:, 0])) % 180.0
+    dang = np.abs(ang[:, None] - ang[None, :])
+    dang = np.minimum(dang, 180.0 - dang)
+    rel = M[None, :, :] - M[:, None, :]                      # from edge i's midpoint to edge j's
+    perp = np.abs((rel * N[:, None, :]).sum(-1))             # distance of j's midpoint from i's line
+    perp = np.maximum(perp, perp.T)
+    ta = ((A[None, :, :] - M[:, None, :]) * U[:, None, :]).sum(-1)   # j's ends along i's line
+    tb = ((B[None, :, :] - M[:, None, :]) * U[:, None, :]).sum(-1)
+    lo, hi = np.minimum(ta, tb), np.maximum(ta, tb)
+    gap = np.maximum(lo - L[:, None] / 2, -L[:, None] / 2 - hi)  # along-line gap (negative = overlap)
+    gap = np.maximum(gap, gap.T)
+    dist_tol = np.where(fixed[:, None] | fixed[None, :], ALIGN_DIST_OUT, ALIGN_DIST)
+    pair = (dang <= ALIGN_ANGLE) & (perp <= dist_tol) & (gap <= ALIGN_GAP)
+    pair &= owner[:, None] != owner[None, :]
+    pair &= ~(fixed[:, None] & fixed[None, :])
+    # groups of mutually aligned edges (union-find over the pairs)
+    parent = list(range(len(A)))
+
+    def find(x):
+        while parent[x] != x:
+            parent[x] = parent[parent[x]]
+            x = parent[x]
+        return x
+    for i, j in zip(*np.nonzero(np.triu(pair, 1))):
+        ri, rj = find(int(i)), find(int(j))
+        if ri != rj:
+            parent[ri] = rj
+    groups = {}
+    for e in range(len(A)):
+        groups.setdefault(find(e), []).append(e)
+    turned = {}  # (polygon, edge index) -> new unit direction
+    worst = 0.0
+    for members in groups.values():
+        if len(members) < 2:
+            continue
+        m = np.array(members)
+        ref = m[fixed[m]] if fixed[m].any() else m
+        # the mean of angles that repeat every 180°: average the doubled angles as vectors
+        th = np.radians(2 * ang[ref])
+        mean = np.degrees(np.arctan2((L[ref] * np.sin(th)).sum(), (L[ref] * np.cos(th)).sum())) / 2 % 180.0
+        for e in m[~fixed[m]]:
+            d = (ang[e] - mean + 90) % 180 - 90
+            if abs(d) < 0.05 or abs(d) > ALIGN_ANGLE:  # already there, or a chain drifted too far
+                continue
+            worst = max(worst, abs(d))
+            t = np.radians(mean)
+            u = np.array([np.cos(t), np.sin(t)])
+            turned[(int(owner[e]), int(idx[e]))] = u if np.dot(u, U[e]) >= 0 else -u
+    touched = set()
+    for (k, i), u in turned.items():
+        touched.add(k)
+    for k in touched:
+        poly = polys[k]
+        n = len(poly)
+        lines = []
+        for i in range(n):
+            p, q = poly[i], poly[(i + 1) % n]
+            if len(p) == 3 and p[2]:
+                lines.append(None)
+                continue
+            a, b = np.array(p[:2], float), np.array(q[:2], float)
+            d = b - a
+            if np.linalg.norm(d) < 1e-9:
+                lines.append(None)
+                continue
+            lines.append(((a + b) / 2, turned.get((k, i), d / np.linalg.norm(d))))
+        new = [list(p) for p in poly]
+        for i in range(n):
+            e0, e1 = (i - 1) % n, i
+            if (k, e0) not in turned and (k, e1) not in turned:
+                continue
+            v = np.array(poly[i][:2], float)
+            q = None
+            if lines[e0] is not None and lines[e1] is not None:
+                q = _intersect(lines[e0], lines[e1])
+                if q is not None and np.linalg.norm(q - v) > ALIGN_SHIFT:
+                    q = None
+            if q is None:  # next to an arc or a near-collinear jog: project onto the turned wall(s)
+                projs = []
+                for e in (e0, e1):
+                    if (k, e) in turned and lines[e] is not None:
+                        p0, u = lines[e]
+                        projs.append(p0 + u * np.dot(v - p0, u))
+                q = np.mean(projs, axis=0)
+            new[i][0], new[i][1] = round(float(q[0]), 1), round(float(q[1]), 1)
+        polys[k] = new
+        prio, w, rid, cat, _, extra = entries[k]
+        entries[k] = (prio, w, rid, cat, new, extra)
+    return len(turned), len(touched), worst
+
+
+SLIVER = 1.5  # px; an overlap nowhere wider than this is a shared wall, not an overlap
+
+
 def resolve_overlaps(entries, min_area=2.0):
     """Rooms never overlap. The traced polygons were reconciled, but arcs fitted afterwards
     (and boxes, ellipses and hand shapes added here) can still bite a neighbour: each polygon
     gives up whatever an entry of higher priority (enclosed rooms, then cores and named
     regions, then open areas, then unnumbered rooms; earlier first within a rank) already
-    covers. A trimmed polygon keeps its arcs as finely flattened curves."""
+    covers. A trimmed polygon keeps its arcs as finely flattened curves. An overlap nowhere
+    wider than `SLIVER` is a shared wall whose faces were turned parallel and is left alone."""
     from shapely.geometry import MultiPolygon, Polygon
     from rooms import flatten_arcs
     shape = lambda poly, extra: Polygon(flatten_arcs(poly), [xy(h) for h in extra.get('holes', [])]).buffer(0)
@@ -322,11 +472,22 @@ def resolve_overlaps(entries, min_area=2.0):
             g = max(g.geoms, key=lambda q: q.area)
         cut = g
         for other in kept:
-            if cut.intersects(other) and cut.intersection(other).area > min_area:
-                cut = cut.difference(other)
-                if isinstance(cut, MultiPolygon):
-                    cut = max(cut.geoms, key=lambda q: q.area)
+            if not cut.intersects(other):
+                continue
+            inter = cut.intersection(other)
+            # a hairline sliver along a shared wall (the two faces turned parallel by a
+            # fraction of a degree) counts as touching: cutting it would notch the wall
+            if inter.area <= min_area or inter.buffer(-SLIVER / 2).is_empty:
+                continue
+            cut = cut.difference(other)
+            if isinstance(cut, MultiPolygon):
+                cut = max(cut.geoms, key=lambda q: q.area)
         if cut is not g and not cut.is_empty and cut.area > 0.2 * g.area:
+            # a cut can leave a zero-width spike where a sliver ended: a mitred inset and
+            # outset by less than a pixel removes it without moving the corners
+            cut = cut.buffer(-SLIVER / 2, join_style='mitre').buffer(SLIVER / 2, join_style='mitre')
+            if isinstance(cut, MultiPolygon):
+                cut = max(cut.geoms, key=lambda q: q.area)
             cut = cut.simplify(0.2)
             poly = [[round(float(x), 1), round(float(y), 1)] for x, y in cut.exterior.coords[:-1]]
             holes = [[[round(float(x), 1), round(float(y), 1)] for x, y in r.coords[:-1]] for r in cut.interiors if Polygon(r).area >= 20]

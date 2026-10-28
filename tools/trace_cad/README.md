@@ -141,7 +141,8 @@ RAM, so floors are processed one at a time.
      side open to the neighbouring workspace, the tiered lecture halls) are drawn by hand in
      the floor's `hand`, from wall coordinates read off the sheet.
 3. `floors.py` — per-floor configuration: label style, hand seeds, gap-sealing strokes, named
-   regions (identified by a point inside them), hand polygons, boxed rooms, and the similarity transform
+   regions (identified by a point inside them), hand polygons, boxed rooms, renamed rooms
+   (`rename`, for a room whose use differs from the plan's label), and the similarity transform
    that registers the Lower Level sheet (drawn at 1/8" = 1' and rotated) onto the upper-floor
    sheets; it was fitted on the six elevator shafts and has a residual below 0.1 pt. Also maps
    the plan's room names to categories and display names.
@@ -149,10 +150,22 @@ RAM, so floors are processed one at a time.
    as the ellipse through their outline when that covers them (the oval room on the roof),
    else as their bounding rectangle when they nearly fill it, else rounded (a 9 px close then
    open drops sinks, benches and door recesses) and fitted with the simplest 4–8 corner
-   polygon that covers them. A final pass guarantees rooms never overlap: arcs fitted
+   polygon that covers them. Walls of neighbouring rooms are then made parallel
+   (`align_walls`): rooms are fitted one by one, so the two faces of a shared partition, or
+   the exterior walls of a row of offices along a facade, come out a degree or two apart and
+   the gap between them is a wedge. Straight edges of different polygons within 6° of each
+   other, within 8 px of each other's line (14 px against the outline, a wall thickness) and
+   overlapping along it or stopping within 25 px (a doorway) form a group, and the group is
+   turned to one angle, the length-weighted mean of its tilts (the midpoint for two walls of a
+   kind), each edge about its own midpoint; a group holding a stretch of the outline takes the
+   outline's angle instead. Corners are rebuilt as the intersections of the turned walls (a
+   corner that would move more than 6 px, next to an arc or a near-collinear jog, is projected
+   onto the turned wall instead). A final pass guarantees rooms never overlap: arcs fitted
    after the reconciliation, boxed cores, ellipses and hand shapes can still bite a neighbour,
    so each polygon gives up what a higher-priority one covers (enclosed rooms, then cores and
-   named regions, then open areas, then unnumbered rooms). Coordinates are PDF points of the upper-floor sheets,
+   named regions, then open areas, then unnumbered rooms); an overlap nowhere wider than
+   1.5 px is a shared wall whose faces were just turned parallel and is left alone, and any
+   spike a cut leaves behind is removed. Coordinates are PDF points of the upper-floor sheets,
    shifted so the building starts near the origin (`frame.ts`); the frame is kept across reruns
    while the building still fits in it (`--reframe` recomputes it).
 
