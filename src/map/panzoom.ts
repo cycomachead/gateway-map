@@ -3,6 +3,12 @@ import type { BBox } from './geometry';
 export interface PanZoom {
   fit(box: BBox): void;
   zoomBy(factor: number): void;
+  /** Shift the view (keeping the zoom) by the least amount that brings `box` into it. */
+  panToInclude(box: BBox, margin?: number): void;
+  /** The current view, in floor units. */
+  view(): BBox;
+  /** Magnification relative to the last fitted box: 1 = the whole floor, 2 = twice as close. */
+  zoom(): number;
   destroy(): void;
 }
 
@@ -137,6 +143,23 @@ export function attachPanZoom(svg: SVGSVGElement): PanZoom {
       const r = svg.getBoundingClientRect();
       zoomAt(factor, r.left + r.width / 2, r.top + r.height / 2);
     },
+    panToInclude(box, margin = 40) {
+      const target = { x: box.x - margin, y: box.y - margin, width: box.width + 2 * margin, height: box.height + 2 * margin };
+      // Something wider than the view is centred instead; otherwise nudge the nearest edge in.
+      const x =
+        target.width >= view.width
+          ? target.x + (target.width - view.width) / 2
+          : Math.min(Math.max(view.x, target.x + target.width - view.width), target.x);
+      const y =
+        target.height >= view.height
+          ? target.y + (target.height - view.height) / 2
+          : Math.min(Math.max(view.y, target.y + target.height - view.height), target.y);
+      if (x === view.x && y === view.y) return;
+      view = { ...view, x, y };
+      apply();
+    },
+    view: () => ({ ...view }),
+    zoom: () => home.width / view.width,
     destroy() {
       svg.removeEventListener('wheel', onWheel);
       svg.removeEventListener('pointerdown', onPointerDown);
