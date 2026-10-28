@@ -15,6 +15,7 @@ npm run build      # outputs to dist/
 npm run preview    # serve the production build
 npm test           # Playwright end-to-end + axe accessibility tests (builds first)
 npm run test:a11y  # just the axe accessibility scans
+npm run occupants  # re-import faculty office assignments from the EECS directory
 ```
 
 ## CI and deployment
@@ -70,6 +71,14 @@ npm run test:a11y  # just the axe accessibility scans
   registers a floor's sign onto the CAD outline and takes the piazzas' shape from it (the
   white band around the atrium on the sign), so those sweeping curves match the signs; the
   photos are also a handy cross-check for room names.
+- **Who sits where** lives in `src/data/gateway/occupants.ts`: plan room number → names. A
+  room with occupants shows their names under its number on the map, in the floor list, in the
+  tooltip and in the room details, and the search box finds the room by any part of a name.
+  `npm run occupants` regenerates the file from the EECS faculty directory
+  (<https://www2.eecs.berkeley.edu/Faculty/Lists/faculty.html>), keeping only faculty with a
+  Gateway office; the *Refresh faculty occupants* workflow does the same monthly or on demand
+  and opens a pull request. See [`tools/faculty/README.md`](./tools/faculty/README.md). Rooms
+  that match no space are logged to the console on start.
 - Hearst Avenue, north of the building, is hand-placed in `src/data/gateway/streets.ts` and
   drawn on every floor for orientation.
 - Run the app; data problems (duplicate ids, unknown floors) are logged to the console.

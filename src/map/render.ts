@@ -1,5 +1,6 @@
 import type { Building, Floor, Poi, Space, Street } from '../data/types';
 import { POI_LABELS } from '../data/types';
+import { nameLines } from '../data/occupants';
 import { centroid, toPath } from './geometry';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
@@ -31,7 +32,7 @@ function renderSpace(space: Space): SVGGElement {
     'data-space-id': space.id,
     tabindex: 0,
     role: 'button',
-    'aria-label': space.name,
+    'aria-label': space.occupants?.length ? `${space.name}, ${space.occupants.join(', ')}` : space.name,
   });
   const d = [space.polygon, ...(space.holes ?? [])].map((p) => toPath(p)).join(' ');
   g.appendChild(el('path', { d, class: 'space__shape' }));
@@ -44,7 +45,21 @@ function renderSpace(space: Space): SVGGElement {
     'text-anchor': 'middle',
     'dominant-baseline': 'middle',
   });
-  label.textContent = space.label ?? space.name;
+  const names = (space.occupants ?? []).flatMap(nameLines);
+  if (!names.length) {
+    label.textContent = space.label ?? space.name;
+  } else {
+    // The room number, then each occupant's name wrapped onto short lines, centred as one block.
+    const lineHeight = 10;
+    const title = el('tspan', { x: c.x, dy: -(names.length * lineHeight) / 2 });
+    title.textContent = space.label ?? space.name;
+    label.appendChild(title);
+    names.forEach((line, i) => {
+      const t = el('tspan', { x: c.x, dy: i === 0 ? lineHeight + 2 : lineHeight, class: 'space__label-name' });
+      t.textContent = line;
+      label.appendChild(t);
+    });
+  }
   g.appendChild(label);
   return g;
 }

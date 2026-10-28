@@ -1,5 +1,5 @@
 import './style.css';
-import { building } from './data/building';
+import { building, unplacedOccupantRooms } from './data/building';
 import type { Floor } from './data/types';
 import { validateBuilding } from './data/validate';
 import { bbox, pad, streetBox, unionBox } from './map/geometry';
@@ -10,9 +10,13 @@ import { mountRouting, readRoute } from './routing';
 import { mountFilters } from './ui/filters';
 import { mountFloorSwitcher } from './ui/floors';
 import { mountPanel } from './ui/panel';
+import { spaceTitle } from './ui/names';
 import { mountSearchBox } from './ui/search';
 
-const problems = validateBuilding(building);
+const problems = [
+  ...validateBuilding(building),
+  ...unplacedOccupantRooms.map((n) => `Occupants listed for room "${n}", which is not on any floor`),
+];
 if (problems.length) console.error('Building data problems:\n' + problems.join('\n'));
 
 const $ = <T extends HTMLElement>(sel: string) => document.querySelector<T>(sel)!;
@@ -117,5 +121,5 @@ store.subscribe((s, prev) => {
 
   const hovered = s.hoveredSpaceId ? building.spaces.find((sp) => sp.id === s.hoveredSpaceId) : null;
   tooltip.hidden = !hovered;
-  if (hovered) tooltip.textContent = hovered.name;
+  if (hovered) tooltip.textContent = spaceTitle(hovered);
 });

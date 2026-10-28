@@ -1,11 +1,13 @@
 import type { Space } from '../data/types';
+import { esc } from './html';
+import { occupantNames } from './names';
 
 export interface SearchHit {
   space: Space;
   score: number;
 }
 
-/** Cheap ranked search over name, id, tags, and description. */
+/** Cheap ranked search over name, occupants, id, tags, and description. */
 export function searchSpaces(spaces: Space[], query: string, limit = 8): SearchHit[] {
   const q = query.trim().toLowerCase();
   if (!q) return [];
@@ -17,10 +19,13 @@ export function searchSpaces(spaces: Space[], query: string, limit = 8): SearchH
     const id = space.id.toLowerCase();
     const tags = (space.tags ?? []).map((t) => t.toLowerCase());
     const desc = (space.description ?? '').toLowerCase();
+    const people = (space.occupants ?? []).map((n) => n.toLowerCase());
 
     let score = 0;
     for (const term of terms) {
-      if (name === term || id === term) score += 100;
+      if (name === term || id === term || people.includes(term)) score += 100;
+      else if (people.some((n) => n.split(/\s+/).some((w) => w.startsWith(term)))) score += 60;
+      else if (people.some((n) => n.includes(term))) score += 45;
       else if (name.startsWith(term)) score += 40;
       else if (name.includes(term)) score += 25;
       else if (id.includes(term)) score += 20;
@@ -47,7 +52,7 @@ export function mountSearchBox(root: HTMLElement, opts: SearchBoxOptions) {
   root.innerHTML = `
     <label class="search">
       <span class="visually-hidden">Search spaces</span>
-      <input type="search" class="search__input" placeholder="Search rooms, labs, tags…" autocomplete="off" />
+      <input type="search" class="search__input" placeholder="Search rooms, people, labs, tags…" autocomplete="off" />
     </label>
     <ul class="search__results" role="listbox" aria-label="Search results" hidden></ul>
   `;
@@ -63,7 +68,10 @@ export function mountSearchBox(root: HTMLElement, opts: SearchBoxOptions) {
       const li = document.createElement('li');
       li.className = 'search__hit' + (i === active ? ' is-active' : '');
       li.setAttribute('role', 'option');
-      li.innerHTML = `<span>${hit.space.name}</span><small>Floor ${opts.floorLabel(hit.space.floorId)}</small>`;
+      const who = occupantNames(hit.space);
+      li.innerHTML =
+        `<span>${esc(hit.space.name)}${who ? `<small class="search__who">${esc(who)}</small>` : ''}</span>` +
+        `<small>Floor ${esc(opts.floorLabel(hit.space.floorId))}</small>`;
       li.addEventListener('mousedown', (e) => {
         e.preventDefault(); // keep focus in the input
         pick(hit.space);
