@@ -19,8 +19,10 @@ Usage: python3 rooms.py <floor> <geom.json> <out_prefix>
    (labs whose internal lines are not walls).
 3. Labels whose fill leaks into the corridor network are "open" areas: the unenclosed free
    space, on the furniture-free raster, is partitioned between them by geodesic distance
-   (watershed). Desks (bold quads of worksurface size) standing in an open area are exported
-   so the map can draw them.
+   (watershed), and each label's open area is the furnished part of its cell (its desk cluster
+   or lounge seats, closed across the aisles), so the hallways between the workspaces are left
+   blank. Corridor and lobby labels are not drawn at all. Desks (bold quads of worksurface
+   size) standing in an open area are exported so the map can draw them.
 4. The exterior is the fill from the sheet corner; the building outline is the outer contour
    of the components (containing labels) that are not exterior.
 Writes <out_prefix>_rooms.json and a debug overlay <out_prefix>_debug.png.
@@ -38,7 +40,6 @@ from shapely import snap
 from shapely.geometry import MultiPolygon, Point, Polygon
 from skimage.segmentation import watershed
 
-import sign
 from floors import category
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -318,10 +319,188 @@ def desks(geom, mask, tol=5):
     return out
 
 
+CLUSTER_GAP = 29     # px; furniture closer than this stands in one cluster (a desk aisle); a hallway is wider
+CLUSTER_MARGIN = 10  # px; an open area reaches this far beyond its furniture (the chairs and the walkway behind them)
+CLUSTER_MIN = 400    # px; a smaller cluster is a lone table, not an open workspace
+CLUSTER_SHARE = 0.2  # a label owns a cluster when at least this share of it stands in the label's cell
+RECT_FILL = 0.8      # a cluster filling its bounding rectangle this well is drawn as that rectangle
+HULL_SLACK = 1.5     # an open office spans its desk groups unless that block is this much bigger than the groups
+SWEEP_CLOSE = 81     # px; a piazza's lounge groups are joined across gaps this wide into one sweeping shape
+SWEEP_SIGMA = 26.0   # px; and its outline is low-pass filtered this much along its length
+SWEEP_OPEN = 15      # px; thinner tails of a sweeping shape vanish (a band of lounge seats is about 30 px deep)
+
+
+def _disc(d):
+    return cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (int(d), int(d)))
+
+
+def furniture_raster(geom, arcs=(), columns=(), scale=SCALE):
+    """Everything standing on the floor (255): the furniture-flagged strokes and curves (desks,
+    chairs, lounge seats, round tables, casework), and the furniture quads. Door swings and the
+    structural columns are flagged as furniture too but are not; they are erased."""
+    w, h = geom['page']
+    img = np.zeros((int(h * scale), int(w * scale)), np.uint8)
+    s = np.array(geom['segs'])
+    if s.shape[1] > 7:
+        keep = (s[:, 7] == 1) & ~((s[:, 0] > PLAN_X_MAX) & (s[:, 2] > PLAN_X_MAX))
+        for x0, y0, x1, y1 in s[keep][:, :4]:
+            cv2.line(img, (int(round(x0 * scale)), int(round(y0 * scale))), (int(round(x1 * scale)), int(round(y1 * scale))), 255, 1)
+    for q in geom.get('quads', []):
+        cv2.polylines(img, [np.round(np.array(q[:4], float) * scale).astype(np.int32)], True, 255, 1)
+    for c in geom['curves']:
+        if len(c) > 6 and c[6] and c[0][0] < PLAN_X_MAX:
+            cv2.polylines(img, [np.round(bezier(np.array(c[:4], float)) * scale).astype(np.int32)], False, 255, 1)
+    for _, _, p in arcs:
+        cv2.polylines(img, [np.round(np.asarray(p) * scale).astype(np.int32)], False, 0, 5)
+    for cx, cy, r in columns:
+        cv2.circle(img, (int(round(cx * scale)), int(round(cy * scale))), int(round(r * scale)) + 3, 0, -1)
+    return img
+
+
+def furniture_clusters(furn, free, ws, gap=CLUSTER_GAP):
+    """The furniture standing in the free (unenclosed) space, closed across the aisles between
+    desks: a desk cluster or a group of lounge seats becomes one blob, while a hallway, wider
+    than an aisle, stays free. Returns the component labels, their stats and, per component,
+    the share of its pixels lying in each open label's cell of the watershed `ws`."""
+    f = ((furn > 0) & free).astype(np.uint8) * 255
+    z = cv2.morphologyEx(f, cv2.MORPH_CLOSE, _disc(gap))
+    z[~free] = 0
+    z = cv2.morphologyEx(z, cv2.MORPH_CLOSE, np.ones((3, 3), np.uint8))  # heal the cracks of casework lines
+    z = cv2.morphologyEx(z, cv2.MORPH_OPEN, _disc(9))
+    n, cc, stats, _ = cv2.connectedComponentsWithStats(z)
+    shares = {}
+    for i in range(1, n):
+        x, y, w, h, a = stats[i]
+        win = (slice(y, y + h), slice(x, x + w))
+        owners = ws[win][cc[win] == i]
+        counts = np.bincount(owners[owners > 0])
+        shares[i] = {int(k): float(c) / a for k, c in enumerate(counts) if c}
+    return cc, stats, shares
+
+
+def furnished_zone(clusters, lab_index, cell, free, margin=CLUSTER_MARGIN, min_area=CLUSTER_MIN, gap=CLUSTER_GAP, join=True):
+    """The furnished part of an open label's cell: the clusters standing in the cell, widened
+    by `margin` (the chairs and the walkway behind them) but kept inside the free space, so a
+    cluster against a wall reaches the wall while the hallway beside it stays blank. A cluster
+    is taken whole by the only label holding a room-sized part of it; one shared between
+    labels (two workspaces an aisle apart, closed into one blob) is split along the cell
+    boundary. An open office spans its desk groups (their convex hull, inside the free space)
+    unless that block would mostly be empty floor, when only the largest group counts; with
+    `join` off (a piazza, whose sweep joins its seat groups itself) the groups are kept as they
+    are. Returns (mask, [(cluster, area taken)]) or (None, []) when the cell holds no cluster."""
+    cc, stats, shares = clusters
+    parts = []  # (cluster id, whole?, area in this cell)
+    for i, sh in shares.items():
+        a = int(stats[i, cv2.CC_STAT_AREA])
+        part = sh.get(lab_index, 0.0) * a
+        if part < min_area:
+            continue
+        # the labels holding a real share of the cluster own it: one owner takes it whole, several
+        # split it; a label with a sliver of someone else's cluster leaves it alone
+        owners = [k for k, v in sh.items() if v >= CLUSTER_SHARE and v * a >= min_area]
+        if owners and lab_index not in owners:
+            continue
+        parts.append((i, len(owners) == 1, int(part)))
+    if not parts:
+        return None, []
+    big = max(parts, key=lambda t: t[2])
+    z = np.zeros(cc.shape, np.uint8)
+    for i, whole, _ in parts:
+        x, y, w, h, _ = stats[i]
+        win = (slice(y, y + h), slice(x, x + w))
+        here = cc[win] == i
+        if not whole:
+            here &= cell[win] > 0
+        z[win][here] = 255
+    reach = cv2.dilate(cell, _disc(2 * margin + 1))
+    base = cv2.dilate(z, _disc(2 * margin + 1))
+    base[~free] = 0
+    base &= reach
+    if not join:
+        z = base
+    else:
+        # an open office is the block spanned by its desk groups, as the wayfinding signs draw
+        # it: the convex hull of the groups, kept inside the free space (a room standing in it
+        # becomes a hole, a wall cuts it). When the hull would mostly be empty floor (groups on
+        # both sides of a hallway), only the largest group counts.
+        ys, xs = np.nonzero(z)
+        hull = np.zeros_like(z)
+        cv2.fillConvexPoly(hull, cv2.convexHull(np.column_stack([xs, ys]).astype(np.int32)), 255)
+        hull = cv2.dilate(hull, _disc(2 * margin + 1)) | base
+        hull[~free] = 0
+        hull &= reach
+        hull = _main_component(hull, z)
+        z = hull if np.count_nonzero(hull) <= HULL_SLACK * np.count_nonzero(base) else _main_component(base, base)
+    if np.count_nonzero(z) < min_area:
+        return None, []
+    return z, [(i, a) for i, _, a in parts]
+
+
+def _main_component(mask, weight):
+    """The connected component of `mask` holding most of `weight` (a cell boundary or a wall
+    may cut a zone into pieces: the main piece is the one with the furniture)."""
+    n, cc = cv2.connectedComponents(mask)
+    if n <= 2:
+        return mask
+    hit = cc[weight > 0]
+    k = np.bincount(hit[hit > 0]).argmax() if (hit > 0).any() else 1
+    return (cc == k).astype(np.uint8) * 255
+
+
+def fit_zone(zone, free):
+    """Polygon of a furnished zone: a cluster that fills its bounding rectangle is drawn as the
+    rectangle (reaching to the walls around it, as the wayfinding signs draw the open offices),
+    an irregular one as the simplest corner fit that covers it, or failing that as line-fitted
+    straight runs with its curves traced finely."""
+    cs, _ = cv2.findContours(zone, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
+    if not cs:
+        return None
+    c = max(cs, key=cv2.contourArea)
+    rect = cv2.minAreaRect(c.astype(np.float32))
+    (_, _), (rw, rh), _ = rect
+    if rw * rh > 0 and cv2.contourArea(c) >= RECT_FILL * rw * rh:
+        box = np.zeros_like(zone)
+        cv2.fillPoly(box, [np.round(cv2.boxPoints(rect)).astype(np.int32)], 255)
+        # the rectangle may not cross a wall or a room, but may touch the walls around it
+        box[~cv2.dilate(free.astype(np.uint8), np.ones((5, 5), np.uint8)).astype(bool)] = 0
+        box = cv2.morphologyEx(box, cv2.MORPH_OPEN, _disc(7))
+        n, cc = cv2.connectedComponents(box)
+        if n > 2:
+            ys, xs = np.nonzero(zone)
+            hit = cc[ys, xs]
+            k = np.bincount(hit[hit > 0]).argmax() if (hit > 0).any() else 1
+            box = (cc == k).astype(np.uint8) * 255
+        poly = straighten(box, min_iou=0.85, max_shift=20, max_dev=4.0)
+        if poly is not None:
+            return poly
+        zone = box
+    tidy = _prep(zone, 0, SMOOTH)
+    poly = straighten(tidy, ns=(4, 5, 6, 8), min_iou=0.85, max_shift=25, max_dev=None)
+    return poly or straight_runs(tidy, EPS, eps_coarse=16, min_len=30)
+
+
+def sweep(zone, free, close=SWEEP_CLOSE, sigma=SWEEP_SIGMA, eps=1.0):
+    """A sweeping shape for a piazza or porch: the lounge groups joined across the walkways
+    between them, the notches opened, the outline low-pass filtered along its length and
+    simplified finely enough for the arc fitter to see its curves. Returns None when nothing
+    of size is left."""
+    z = cv2.morphologyEx(zone, cv2.MORPH_CLOSE, _disc(close))
+    z[~free] = 0
+    z = cv2.morphologyEx(z, cv2.MORPH_OPEN, _disc(SWEEP_OPEN))  # no thin tails, but a band of seats along the glass survives
+    cs, _ = cv2.findContours(z, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
+    if not cs:
+        return None
+    c = max(cs, key=cv2.contourArea).reshape(-1, 2).astype(float)
+    if cv2.contourArea(c.astype(np.float32)) < CLUSTER_MIN or len(c) < 20:
+        return None
+    sm = gaussian_filter1d(c, sigma, axis=0, mode='wrap')
+    poly = cv2.approxPolyDP(sm.astype(np.float32), eps, True).reshape(-1, 2) / SCALE
+    return [[round(float(x), 1), round(float(y), 1)] for x, y in poly]
+
+
 SMOOTH = 7  # px; round close/open kernel that drops the jogs along traced walls
 SMOOTH_NAMES = ('PIAZZA', 'PORCH')  # open areas drawn as sweeping shapes, not hugging the rooms
 SMOOTH_OPEN = 25    # px; features narrower than this (door notches, office corners) vanish
-SMOOTH_INSET = 4    # px; the sweeping shape stands clear of the rooms around it
 EPS = 2.0    # px; polygon simplification tolerance for rooms
 QUAD_IOU = 0.9  # a four-corner fit covering the room this well replaces a notched one
 
@@ -1090,7 +1269,9 @@ def reconcile(items, min_overlap=2.0):
             holes = [[[round(float(x), 1), round(float(y), 1)] for x, y in ring.coords[:-1]] for ring in poly.interiors if Polygon(ring).area >= 20]
             if holes:
                 it['holes'] = holes
-        kept.append(poly)
+        # later polygons are cut against this one's true arcs, not their chords, so a piazza
+        # beside a curved kitchen wall follows the curve instead of stepping along it
+        kept.append(Polygon(flatten_arcs(it['polygon']), [_xy(h) for h in it.get('holes', [])]).buffer(0) if any(len(p) == 3 and p[2] for p in it['polygon']) else poly)
         owners.append(it)
     return changed
 
@@ -1399,6 +1580,8 @@ def run(floor, geom_path, out_prefix, cfg=None, exterior_seed=(30, 30)):
     # furniture-free raster so desks and chairs do not carve the open areas.
     free = (walls == 0) & (exterior == 0) & (enclosed == 0) & (terrace == 0)
     furniture = []
+    cells = {}  # open label id -> its cell of the corridor network (for the debug overlay)
+    furn = furniture_raster(geom, arcs, cols)
     if open_labels:
         markers = np.zeros(img.shape, np.int32)
         for i, lab in enumerate(open_labels, 1):
@@ -1411,6 +1594,8 @@ def run(floor, geom_path, out_prefix, cfg=None, exterior_seed=(30, 30)):
             cv2.circle(markers, (x, y), 3, i, -1)
         markers[~free] = 0
         ws = watershed(np.zeros(img.shape, np.uint8), markers, mask=free)
+        free_open = ws > 0
+        clusters = furniture_clusters(furn, free_open, ws)
         for i, lab in enumerate(open_labels, 1):
             m = (ws == i).astype(np.uint8)
             # keep only the component holding the seed
@@ -1421,20 +1606,30 @@ def run(floor, geom_path, out_prefix, cfg=None, exterior_seed=(30, 30)):
                 if len(xs):
                     k = cc[ys[np.argmin((xs - lab['x'] * SCALE) ** 2 + (ys - lab['y'] * SCALE) ** 2)], xs[np.argmin((xs - lab['x'] * SCALE) ** 2 + (ys - lab['y'] * SCALE) ** 2)]]
             m = (cc == k).astype(np.uint8) if k else m
-            if (lab['id'] in cfg.get('smooth', set()) or any(w in lab['name'].upper() for w in SMOOTH_NAMES)) and not (cfg.get('sign') and 'PIAZZA' in lab['name'].upper()):
+            cells[lab['id']] = m
+            if category(lab['name'], lab['id']) == 'circulation':
+                continue  # a corridor or lobby label: the hallways are not drawn
+            # The cell is the label's share of the whole corridor network; the open area is
+            # just its furnished part (the desk cluster, the lounge seats), so the hallways
+            # between the workspaces stay blank, as on the wayfinding signs.
+            sweeping = lab['id'] in cfg.get('smooth', set()) or any(w in lab['name'].upper() for w in SMOOTH_NAMES)
+            # the whole cell, not just the seed's component: a casework line may cut the label
+            # off from its own desks
+            zone, taken = furnished_zone(clusters, i, (ws == i).astype(np.uint8) * 255, free_open, join=not sweeping)
+            if zone is None:
+                print(f"  open: {lab['id']} ({lab['name']}) holds no furniture, not drawn")
+                continue
+            print(f"    {lab['id']}: clusters {taken}")
+            if sweeping:
                 # a piazza or porch: a sweeping shape with a gap to the rooms, not a tracing of
                 # every notch along them
-                k = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (SMOOTH_OPEN, SMOOTH_OPEN))
-                m = cv2.morphologyEx(m * 255, cv2.MORPH_CLOSE, k)
-                m = cv2.erode(m, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2 * SMOOTH_INSET + 1, 2 * SMOOTH_INSET + 1)))
-                m = cv2.morphologyEx(m, cv2.MORPH_OPEN, k)  # after the inset, so no thin tails survive
-                poly = straight_runs(m, EPS, eps_coarse=20, min_len=40)
+                poly = sweep(zone, free_open)
             else:
-                poly = straight_runs(m, EPS, eps_coarse=16, min_len=20, close=9, smooth=SMOOTH)
+                poly = fit_zone(zone, free_open)
             if poly is None:
                 print('  empty open cell for', lab['id'])
                 continue
-            rooms.append({**lab, 'kind': 'open', 'area': int(np.count_nonzero(m)), 'polygon': poly})
+            rooms.append({**lab, 'kind': 'open', 'sweep': sweeping, 'area': int(np.count_nonzero(zone)), 'polygon': poly})
         furniture = desks(geom, (ws > 0).astype(np.uint8))
     # Rooms drawn by hand in the floor config (labs whose benches are drawn as walls, a room
     # whose side is open to the neighbouring workspace): the polygon replaces the traced one.
@@ -1549,48 +1744,24 @@ def run(floor, geom_path, out_prefix, cfg=None, exterior_seed=(30, 30)):
         for k, c in enumerate(cs):
             if hier[0][k][3] != -1 or cv2.contourArea(c) < 5000:
                 continue
-            outer = cv2.approxPolyDP(c, EPS, True).reshape(-1, 2) / SCALE
+            # the deck's edges are line-fitted runs (the parapet, the blocks' walls) with the
+            # curved stretches traced finely, like the outline, rather than a raw tracing
+            deck = np.zeros_like(tm)
+            cv2.drawContours(deck, cs, k, 255, -1)
+            outer = np.array(straight_runs(deck, EPS, eps_coarse=10, min_len=30) or (cv2.approxPolyDP(c, EPS, True).reshape(-1, 2) / SCALE).tolist(), float)
             holes = []
             j = hier[0][k][2]
             while j != -1:
                 if cv2.contourArea(cs[j]) >= 2000:
-                    holes.append([[round(float(x), 1), round(float(y), 1)] for x, y in cv2.approxPolyDP(cs[j], EPS, True).reshape(-1, 2) / SCALE])
+                    block = np.zeros_like(tm)
+                    cv2.drawContours(block, cs, j, 255, -1)
+                    hole = straight_runs(block, EPS, eps_coarse=10, min_len=30) or (cv2.approxPolyDP(cs[j], EPS, True).reshape(-1, 2) / SCALE).tolist()
+                    holes.append([[round(float(x), 1), round(float(y), 1)] for x, y in hole])
                 j = hier[0][j][0]
             M = cv2.moments(c)
             rooms.append({'id': 'terrace', 'name': 'ROOF TERRACE', 'x': M['m10'] / M['m00'] / SCALE, 'y': M['m01'] / M['m00'] / SCALE, 'size': 0,
                           'kind': 'open', 'area': int(cv2.contourArea(c)), 'terrace_holes': holes,
                           'polygon': [[round(float(x), 1), round(float(y), 1)] for x, y in outer]})
-    # The piazzas: their shape comes from the wayfinding sign (the white band between the
-    # wings, registered onto the outline), split between the piazza labels and cut away from
-    # the rooms and cores the CAD knows precisely.
-    if cfg.get('sign') and outlines:
-        sign_path, hint = cfg['sign']
-        band, _, info = sign.shapes(os.path.join(HERE, '..', '..', 'floorplans', sign_path), np.array(_xy(outlines[0])), hint)
-        print(f"  sign {sign_path}: outline residual median {info['median']:.1f} px, p90 {info['p90']:.1f} px")
-        piazzas = [r for r in rooms if 'PIAZZA' in r['name'].upper() and r.get('polygon')]
-        if band is not None and piazzas:
-            from shapely.geometry import MultiPoint
-            from shapely.ops import unary_union, voronoi_diagram
-            B = Polygon(band).buffer(0).intersection(Polygon(_xy(outlines[0])).buffer(0))
-            blockers = [Polygon(_xy(r['polygon'])).buffer(4) for r in rooms if r['kind'] == 'room' and r not in piazzas and r.get('polygon')]
-            blockers += [Polygon(_xy(u['polygon'])).buffer(4) for u in unl if u['area'] > 800]
-            block = unary_union(blockers)
-            L = MultiPoint([(r['x'], r['y']) for r in piazzas])
-            minx, miny, maxx, maxy = B.bounds
-            env = Polygon([(minx - 500, miny - 500), (maxx + 500, miny - 500), (maxx + 500, maxy + 500), (minx - 500, maxy + 500)])
-            for cell in voronoi_diagram(L, envelope=env).geoms:
-                r = min(piazzas, key=lambda r: cell.distance(Point(r['x'], r['y'])))
-                g = B.intersection(cell).difference(block)
-                if isinstance(g, MultiPolygon):
-                    g = max(g.geoms, key=lambda q: q.area)
-                if g.is_empty:
-                    continue
-                g = g.simplify(1.0)
-                r['polygon'] = [[round(float(x), 1), round(float(y), 1)] for x, y in g.exterior.coords[:-1]]
-                r['kind'] = 'open'  # the sign's band is circulation around the atrium
-                if 'open plan' not in r.get('name', ''):
-                    pass
-            print(f"  piazzas {[r['id'] for r in piazzas]} drawn from the sign")
     # Rooms may touch but not overlap: enclosed rooms keep their shape, then the unlabelled
     # regions (cores), then the open areas.
     n_fixed = reconcile([(0, r) for r in rooms if r['kind'] == 'room' and r.get('polygon')]
@@ -1619,7 +1790,9 @@ def run(floor, geom_path, out_prefix, cfg=None, exterior_seed=(30, 30)):
     arcify_all(outlines + closed + [u['polygon'] for u in unl] + [r['polygon'] for r in rooms if r['kind'] == 'open' and r.get('polygon')], n_straight=len(outlines) + len(closed), near=10.0)
     for r in rooms:
         if r['kind'] == 'open' and r.get('polygon'):
-            r['polygon'] = merge_collinear(r['polygon'])
+            # a sweeping shape sheds the short steps left where it was cut against its
+            # neighbours (its arcs, fitted above, are left alone)
+            r['polygon'] = merge_collinear(r['polygon'], max_turn=35.0, max_dev=8.0) if r.get('sweep') else merge_collinear(r['polygon'])
     # No room may cross the exterior wall: an arc that carries a room outside is flattened
     # step by step, and whatever still sticks out (a fill that crept into the facade's wall
     # cavity) is cut off along the outline.
@@ -1673,6 +1846,14 @@ def run(floor, geom_path, out_prefix, cfg=None, exterior_seed=(30, 30)):
         p = np.round(np.array(_xy(r['polygon'])) * SCALE).astype(np.int32)
         cv2.fillPoly(dbg, [p], col) if r['kind'] == 'room' else cv2.polylines(dbg, [p], True, col, 2)
         cv2.putText(dbg, r['id'], (int(r['x'] * SCALE) - 8, int(r['y'] * SCALE) + 3), cv2.FONT_HERSHEY_SIMPLEX, 0.3, (0, 0, 0), 1)
+    if open_labels:  # the furniture clusters, in orange
+        cs_, _ = cv2.findContours((clusters[0] > 0).astype(np.uint8), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        cv2.drawContours(dbg, cs_, -1, (0, 140, 255), 1)
+        for lab in open_labels:
+            cv2.circle(dbg, (int(lab['x'] * SCALE), int(lab['y'] * SCALE)), 4, (0, 0, 255), -1)
+    for lab_id, cm in cells.items():  # the open labels' cells, dotted in grey
+        cs_, _ = cv2.findContours(cm, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        cv2.drawContours(dbg, cs_, -1, (170, 170, 170), 1)
     for u in unl:
         p = np.round(np.array(_xy(u['polygon'])) * SCALE).astype(np.int32)
         cv2.polylines(dbg, [p], True, (0, 0, 255), 1)

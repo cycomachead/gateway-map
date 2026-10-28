@@ -3,7 +3,9 @@
 Usage: python3 extract.py <pdf> <out.json>
 
 Writes segments, bezier curves, rectangles, quads (all in PDF points, y down) and the text
-lines with their bounding boxes and font sizes. Everything downstream works from this JSON so the
+lines with their bounding boxes and font sizes. Segments and curves carry a furniture flag
+(a multi-piece path of furniture size: desks, chairs, round tables, door swings), so the room
+tracer can draw a furniture-free wall raster and a furniture-only one. Everything downstream works from this JSON so the
 (large) PDFs only have to be parsed once.
 """
 import json
@@ -46,7 +48,7 @@ def extract(src: str, out: str) -> None:
                 a, b = it[1], it[2]
                 segs.append([a.x, a.y, b.x, b.y, width, black, filled, furn])
             elif it[0] == 'c':
-                curves.append([[q.x, q.y] for q in it[1:5]] + [width, black])
+                curves.append([[q.x, q.y] for q in it[1:5]] + [width, black, furn])
             elif it[0] == 're':
                 r = it[1]
                 rects.append([r.x0, r.y0, r.x1, r.y1, width, black, filled])

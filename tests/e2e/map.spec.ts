@@ -59,9 +59,14 @@ test('open workspaces show their desks, and the research labs are plain boxes', 
     const d = (await page.locator(`[data-space-id="${id}"] .space__shape`).getAttribute('d')) ?? '';
     expect(d.match(/[ML]/g)?.length, `${id} should be a box`).toBe(4);
   }
-  // Huddle room 4151 stands inside open office 4160, which is drawn with a hole for it.
+  // Open offices are the blocks spanned by their desks: 4330 is a plain quad like on the
+  // wayfinding signs, 4160 a single compact polygon, and the hallways between them (the plan's
+  // corridor labels) are left blank, not drawn as rooms.
+  const quad = (await page.locator('[data-space-id="4-4330"] .space__shape').getAttribute('d')) ?? '';
+  expect(quad.match(/[MLA]/g)?.length).toBe(4);
   const open = (await page.locator('[data-space-id="4-4160"] .space__shape').getAttribute('d')) ?? '';
-  expect(open.match(/M/g)?.length).toBe(2);
+  expect(open.match(/M/g)?.length).toBe(1);
+  expect(await page.locator('#map [data-space-id="4-4corr18"]').count()).toBe(0);
 });
 
 test('keyboard users can select a room with Enter', async ({ page }) => {
@@ -167,8 +172,8 @@ test('the East Stair stays inside the building on every floor', async ({ page })
   }
 });
 
-test('the Floor 1 lecture halls and drone lab never overlap, with a hallway behind them', async ({ page }) => {
-  await expect(page.locator('#map [data-space-id="1-east-hallway"]')).toHaveClass(/space--circulation/);
+test('the Floor 1 lecture halls and drone lab never overlap, and the hallway behind them is blank', async ({ page }) => {
+  expect(await page.locator('#map [data-space-id="1-east-hallway"]').count()).toBe(0);
   const shared = await page.evaluate(() => {
     const shapes = ['1210', '1220', '1230'].map((id) => document.querySelector<SVGPathElement>(`[data-space-id="1-${id}"] .space__shape`)!);
     let count = 0;
