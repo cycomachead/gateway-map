@@ -90,7 +90,8 @@ Each step should leave `main` in a working, deployable state.
 - GitHub Actions: typecheck + test on PR; build + deploy to Pages on `main`.
 
 ### 10. Nice-to-haves (later)
-- Directions between two spaces (graph over doors/corridors, A* pathfinding).
+- Directions between two spaces (graph over doors/corridors, A* pathfinding); see the
+  draft design in [`docs/wayfinding-design.md`](./docs/wayfinding-design.md).
 - Embeddable mode (`?embed=1`) for use in other sites.
 - Print/export a floor as PNG/PDF.
 - Analytics on most-searched spaces.
