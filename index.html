@@ -16,6 +16,10 @@
         </h1>
         <div id="search" class="topbar__search"></div>
         <div id="filters" class="chips"></div>
+        <div class="topbar__actions">
+          <button type="button" id="shortcuts-btn" class="ctl ctl--round" aria-label="Keyboard shortcuts" title="Keyboard shortcuts (?)">?</button>
+          <button type="button" id="about-btn" class="text-btn">About</button>
+        </div>
       </header>
 
       <main class="stage">
@@ -33,6 +37,32 @@
 
       <aside id="panel" class="panel" aria-live="polite"></aside>
     </div>
+
+    <dialog id="shortcuts" class="dialog" aria-labelledby="shortcuts-title"></dialog>
+
+    <dialog id="about" class="dialog" aria-labelledby="about-title">
+      <h2 id="about-title" class="dialog__title">About Gateway Map</h2>
+      <p>
+        An interactive map of the Gateway building at UC Berkeley, home of the College of Computing,
+        Data Science, and Society. Find rooms, labs, and faculty offices on every floor, and share a
+        link straight to a room.
+      </p>
+      <p>
+        Made by <a href="https://mball.co" rel="author">Michael Ball</a>, with a healthy dose of
+        large language models.
+      </p>
+      <p>
+        Floor plans are traced from the architects' CAD drawings; faculty office assignments come from
+        the EECS directory. Found a mistake?
+        <a href="https://github.com/cycomachead/gateway-map">Open an issue or a pull request on GitHub</a>.
+      </p>
+      <div class="dialog__actions">
+        <button type="button" class="btn" id="about-shortcuts">Keyboard shortcuts</button>
+        <button type="button" class="btn" data-close>Close</button>
+      </div>
+    </dialog>
+
+    <div id="announcer" class="visually-hidden" role="status"></div>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

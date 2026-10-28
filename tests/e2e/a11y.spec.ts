@@ -47,3 +47,21 @@ test('dark colour scheme has no axe violations', async ({ page }) => {
   await page.locator('[data-space-id="1-1210"] .space__shape').click();
   await expectNoViolations(page, 'dark mode');
 });
+
+test('the About dialog has no axe violations', async ({ page }) => {
+  await page.getByRole('button', { name: 'About' }).click();
+  await expect(page.getByRole('dialog', { name: 'About Gateway Map' })).toBeVisible();
+  await expectNoViolations(page, 'about dialog');
+});
+
+test('the keyboard shortcuts dialog has no axe violations', async ({ page }) => {
+  await page.keyboard.press('?');
+  await expect(page.getByRole('dialog', { name: 'Keyboard shortcuts' })).toBeVisible();
+  await expectNoViolations(page, 'shortcuts dialog');
+});
+
+test('a room focused from the keyboard has no axe violations', async ({ page }) => {
+  await page.keyboard.press('ArrowRight');
+  await expect(page.locator('#map [data-space-id]:focus')).toHaveCount(1);
+  await expectNoViolations(page, 'room focused by arrow key');
+});

@@ -1,4 +1,4 @@
-import type { SpaceCategory } from './data/types';
+import type { Space, SpaceCategory } from './data/types';
 
 export interface AppState {
   floorId: string;
@@ -10,6 +10,10 @@ export interface AppState {
   /** The side panel lists the rooms of every floor, not just the current one. */
   allFloors: boolean;
 }
+
+/** Category filters never hide circulation: corridors and stairs stay as landmarks. */
+export const isFilteredOut = (space: Space, categories: Set<SpaceCategory>) =>
+  categories.size > 0 && space.category !== 'circulation' && !categories.has(space.category);
 
 type Listener = (state: AppState, prev: AppState) => void;
 
