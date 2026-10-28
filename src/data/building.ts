@@ -10,9 +10,10 @@ import * as l4 from './gateway/level4';
 import * as l5 from './gateway/level5';
 import { DEPARTMENTS, RESERVABLE } from './gateway/departments';
 import { OCCUPANTS } from './gateway/occupants';
+import { SHEET_OCCUPANTS } from './gateway/sheet_occupants';
 import { hearst } from './gateway/streets';
 import { assignDepartments } from './departments';
-import { assignOccupants } from './occupants';
+import { assignOccupants, mergeOccupants } from './occupants';
 import type { Building, Floor, Space } from './types';
 
 /**
@@ -21,8 +22,9 @@ import type { Building, Floor, Space } from './types';
  * Every level is generated from the CAD plan-view PDFs by `tools/trace_cad/` (rooms are
  * flood-filled from the plan's room labels, outlines are the exterior walls) and drawn in one
  * shared coordinate frame, so walls and cores line up exactly when switching floors. Who sits
- * where comes from `gateway/occupants.ts`, and which department a room belongs to from
- * `gateway/departments.ts` (the colour-shaded space-assignment plans).
+ * where comes from `gateway/occupants.ts` (the EECS directory) and `gateway/sheet_occupants.ts`
+ * (the names written on the colour-shaded space-assignment plans), and which department a
+ * room belongs to from `gateway/departments.ts` (the plans' shading).
  */
 /** What a generated `level*.ts` module exports (`desks` arrived later, so older modules may lack it). */
 type LevelModule = { outline: XY[]; islands: XY[][]; rooms: RoomSpec[]; pois: PoiSpec[]; desks?: XY[][] };
@@ -47,7 +49,7 @@ const floors: Floor[] = levels.map(([id, label, level, l]) => ({
 
 const occupied = assignOccupants(
   levels.flatMap(([id, , , l]): Space[] => spacesFrom(id, l.rooms)),
-  OCCUPANTS,
+  mergeOccupants(OCCUPANTS, SHEET_OCCUPANTS),
 );
 const assigned = assignDepartments(occupied.spaces, DEPARTMENTS, RESERVABLE);
 const spaces = assigned.spaces;

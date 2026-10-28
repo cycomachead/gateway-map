@@ -1,5 +1,7 @@
 import { expect, test } from '@playwright/test';
 import { OCCUPANTS } from '../../src/data/gateway/occupants';
+import { SHEET_OCCUPANTS } from '../../src/data/gateway/sheet_occupants';
+import { mergeOccupants } from '../../src/data/occupants';
 
 // Faculty names come from the EECS directory via tools/faculty/import_faculty.py; the
 // tests follow whatever that file holds, so they pass on a fresh (empty) import as well.
@@ -57,4 +59,30 @@ test('every room in the directory is on the map', async ({ page }) => {
   await page.goto('/');
   await page.waitForSelector('#map [data-space-id]');
   expect(warnings.filter((w) => w.includes('Occupants listed for room'))).toEqual([]);
+});
+
+// The names written on the colour space-assignment sheets (tools/departments/import_names.py)
+// fill in the offices the directory does not cover and are merged under it elsewhere.
+const merged = mergeOccupants(OCCUPANTS, SHEET_OCCUPANTS);
+const sheetOnly = Object.keys(SHEET_OCCUPANTS).find((r) => !OCCUPANTS[r]?.length && /^\d{4}$/.test(r));
+const shared = Object.keys(SHEET_OCCUPANTS).find((r) => OCCUPANTS[r]?.length && /^\d{4}$/.test(r));
+
+test.describe('offices named on the space-assignment sheets', () => {
+  test.skip(!sheetOnly, 'no sheet-only office in src/data/gateway/sheet_occupants.ts');
+
+  test('an office the directory does not list shows the names from the sheet', async ({ page }) => {
+    await page.goto(`/floor-${sheetOnly![0]}?room=${sheetOnly![0]}-${sheetOnly}`);
+    await page.waitForSelector('#map [data-space-id]');
+    await expect(page.locator('#panel h2')).toContainText(sheetOnly!);
+    for (const name of SHEET_OCCUPANTS[sheetOnly!]) await expect(page.locator('#panel .occupants')).toContainText(name);
+  });
+
+  test('a person named by both the directory and the sheet is listed once', async ({ page }) => {
+    test.skip(!shared, 'no office is in both lists');
+    await page.goto(`/floor-${shared![0]}?room=${shared![0]}-${shared}`);
+    await page.waitForSelector('#map [data-space-id]');
+    const listed = (await page.locator('#panel .occupants').innerText()).split('\n').map((s) => s.trim()).filter(Boolean);
+    expect(listed).toEqual(merged[shared!]);
+    expect(listed.length).toBeLessThanOrEqual(OCCUPANTS[shared!].length + SHEET_OCCUPANTS[shared!].length);
+  });
 });
