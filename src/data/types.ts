@@ -67,6 +67,8 @@ export interface Space {
   tags?: string[];
   description?: string;
   capacity?: number;
+  /** People whose office this is (e.g. the faculty member assigned to a faculty office). */
+  occupants?: string[];
 }
 
 export type PoiKind =

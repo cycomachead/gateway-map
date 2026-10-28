@@ -115,6 +115,8 @@ button { font: inherit; color: inherit; }
   padding: 8px 10px; border-radius: 6px; cursor: pointer;
 }
 .search__hit small { color: var(--text-muted); }
+.search__hit > span { display: flex; flex-direction: column; min-width: 0; }
+.search__who { font-size: 12px; }
 .search__hit:hover, .search__hit.is-active { background: var(--accent-soft); }
 
 .chips { display: flex; gap: 6px; flex-wrap: wrap; }
@@ -187,6 +189,7 @@ button { font: inherit; color: inherit; }
   font-size: 12px; font-weight: 600; fill: var(--text); pointer-events: none;
   paint-order: stroke; stroke: var(--floor-fill); stroke-width: 3px; stroke-linejoin: round;
 }
+.space__label-name { font-size: 8.5px; font-weight: 500; }
 
 .poi__dot { fill: var(--surface); stroke: var(--floor-stroke); stroke-width: 1.5; }
 .poi__glyph { font-size: 12px; font-weight: 700; fill: var(--text); pointer-events: none; }
@@ -228,6 +231,7 @@ button { font: inherit; color: inherit; }
 .facts { display: grid; grid-template-columns: auto 1fr; gap: 6px 14px; margin: 0 0 18px; }
 .facts dt { color: var(--text-muted); }
 .facts dd { margin: 0; }
+.occupants { line-height: 1.4; }
 .tag {
   display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 12px;
   background: var(--surface-2); border: 1px solid var(--border); margin: 0 4px 4px 0;
@@ -244,6 +248,8 @@ button { font: inherit; color: inherit; }
   padding: 8px 10px; border: 0; border-radius: 7px; background: transparent; cursor: pointer;
 }
 .list-btn:hover { background: var(--surface-2); }
+.list-btn__text { display: flex; flex-direction: column; min-width: 0; }
+.list-btn__who { color: var(--text-muted); font-size: 12px; }
 .swatch { width: 10px; height: 10px; border-radius: 3px; background: var(--c); flex: none; }
 .swatch--classroom { --c: var(--c-classroom); }
 .swatch--lab { --c: var(--c-lab); }

@@ -1,0 +1,40 @@
+name: Refresh faculty occupants
+
+# Re-reads the EECS faculty directory and opens a pull request when any Gateway office
+# assignment changed. Run it from the Actions tab (workflow_dispatch) or wait for the
+# monthly schedule.
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '17 14 1 * *' # 1st of every month, 14:17 UTC
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Import from the directory page
+        run: npm run occupants
+      - name: Open a pull request if anything changed
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if git diff --quiet -- src/data/gateway/occupants.ts; then
+            echo "Occupants are up to date."
+            exit 0
+          fi
+          branch="refresh-occupants/$(date -u +%Y-%m-%d)"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -b "$branch"
+          git add src/data/gateway/occupants.ts
+          git commit -m "data: refresh faculty occupants from the EECS directory"
+          git push --force origin "$branch"
+          gh pr create --fill --base "${{ github.event.repository.default_branch }}" --head "$branch" \
+            --body "Automated re-import of https://www2.eecs.berkeley.edu/Faculty/Lists/faculty.html by the *Refresh faculty occupants* workflow. Review the diff of \`src/data/gateway/occupants.ts\` and merge." \
+            || echo "A pull request for $branch already exists."
