@@ -79,8 +79,9 @@ Each step should leave `main` in a working, deployable state.
 - Lower-level teaching rooms are numbered from the teaching-spaces PDF (pages 4 and 10),
   with cleaned CAD wall shapes. See `floorplans/README.md` for the source inventory and room key.
 - Known gaps: the Lower Level service rooms, Floor 1 and Floor 5 plans only number some rooms (the rest are
-  drawn as unnumbered rooms, a few of them irregular where fixtures break up the fill); a few labels whose door could not be matched are stored as open areas; open-area
-  boundaries are an approximation (nearest label), not walls.
+  drawn as unnumbered rooms, a few of them irregular where fixtures break up the fill); a few labels whose door could not be matched are stored as open areas; open areas are
+  the furnished zones of their labels (desk clusters, lounge groups), not walls, and the
+  hallways between them are left blank.
 - Fill in room metadata (departments, capacity, hours, photos).
 
 ### 9. Quality & delivery

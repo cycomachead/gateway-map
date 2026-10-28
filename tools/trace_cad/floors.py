@@ -18,8 +18,6 @@ All coordinates are PDF points of that floor's sheet.
              folding partitions ignored) even where that covers the traced region loosely.
 `smooth`     open-area label ids drawn as sweeping shapes standing clear of the rooms (the
              piazzas and porches get this by name).
-`sign`       (photo in floorplans/, (x, y) fraction of the map where the atrium oval is): the
-             wayfinding sign whose simplified map gives the piazzas their shape.
 `atrium`     (cx, cy, a, b, degrees): the ellipse of the atrium's rail, for floors where stairs
              wind down inside it (so the opening never closes as one region).
 `unnamed`    minimum area (px): unlabelled enclosed regions at least this big are emitted as
@@ -176,13 +174,6 @@ F1_HALL_1220 = [
     (2564.9, 1049.5), (2556.6, 1050.5), (2548.2, 1053.2), (2539.9, 1058.0), (2531.8, 1065.4), (2524.0, 1075.8),
     (2480.6, 1234.1), (2415.9, 1315.8),
 ]
-# The hallway along the backs of 1210, 1220 and 1230 to the building's southeast corner,
-# storage rooms included. Drawn generously: it is clipped to the outline and gives way to the
-# halls, the drone lab and the East Stair.
-F1_EAST_HALLWAY = ('east-hallway', 'circulation', 'East Hallway', '', ['hallway', 'corridor'],
-                   [(2400, 815), (2484, 745), (3150, 1450), (3150, 1700), (2950, 1700), (2950, 1500),
-                    (2860, 1390), (2650, 1150), (2520, 1000), (2420, 900)])
-
 FLOORS = {
     # The Lower Level sheet is at 1/8" = 1' and rotated; the transform was fitted on the six
     # elevator shafts (X-marked squares) shared with the upper floors (residual < 0.1 pt).
@@ -212,8 +203,7 @@ FLOORS = {
               quad={'B1040H'}),
     # The covered plaza between the Southwest block and the main building is outside.
     '1': dict(pdf='1', label='1', level=1, exterior=[(960, 1600)], exits=True, unnamed=2500, atrium=(1499, 1219, 128, 185, 80.5),
-              # the hallway behind the lecture halls is listed after the East Stair, which it abuts
-              manual=[EAST_STAIR, F1_EAST_HALLWAY],
+              manual=[EAST_STAIR],
               # 1420's label sits on its tables: it is named below
               skip={'1420'},
               # The two lecture halls carry no number on this plan (their tiers split them into
@@ -238,13 +228,13 @@ FLOORS = {
     # Floors 2 and 3 follow floor 4 (below): the research labs are boxes, the kitchens and
     # meeting rooms with a pilaster or a curved wall are four-cornered. Stairs wind down inside
     # the atrium's rail on these floors, so the rail's ellipse is given.
-    '2': dict(pdf='2', label='2', level=2, named=CORES + NE_RESTROOMS + SW_RESTROOMS, manual=[EAST_STAIR], sign=('builsding-signs/level2-whole-floor.jpg', (0.44, 0.52)),
+    '2': dict(pdf='2', label='2', level=2, named=CORES + NE_RESTROOMS + SW_RESTROOMS, manual=[EAST_STAIR],
               box={'2184', '2192', '2322', '2404', '2408'},
               quad={'2130', '2133', '2219', '2228', '2345', '2355', '2361', '2389', '2431', '2445'},
               hand={'2310': [(1655, 1652), (1770, 1648), (1816, 1822), (1666, 1827)],
                     '2161': [(2128, 469), (2203, 452), (2255, 514), (2168, 594), (2132, 545)]},
               atrium=(1460, 1260, 252, 152, -14)),
-    '3': dict(pdf='3', label='3', level=3, named=CORES + NE_RESTROOMS + SW_RESTROOMS, manual=[EAST_STAIR], sign=('builsding-signs/level3-whole-floor.jpg', (0.44, 0.52)),
+    '3': dict(pdf='3', label='3', level=3, named=CORES + NE_RESTROOMS + SW_RESTROOMS, manual=[EAST_STAIR],
               box={'3131', '3184', '3192', '3322', '3406'},
               quad={'3130', '3161', '3219', '3350', '3355', '3375', '3431', '3447'},
               # the labs 3184/3192 are split by benches drawn as walls; 3310 opens onto 3340
@@ -256,10 +246,8 @@ FLOORS = {
     # benches); the social kitchens 4130 and 4350 are boxes with one curved wall, and the
     # meeting rooms 4355/4375 and the study room 4310 are rectangles with a pilaster, a
     # cabinet or a closet in a corner.
-    # Floors 2-4 share the plan around the atrium, and there is no level 4 sign photo.
     '4': dict(pdf='4', label='4', level=4, named=CORES + NE_RESTROOMS + SW_RESTROOMS, manual=[EAST_STAIR],
-              box={'4131', '4184', '4192', '4408', '4322'}, quad={'4130', '4350', '4355', '4375', '4310'},
-              sign=('builsding-signs/level3-whole-floor.jpg', (0.44, 0.52))),
+              box={'4131', '4184', '4192', '4408', '4322'}, quad={'4130', '4350', '4355', '4375', '4310'}),
     # Floor 5 is set back: the indoor blocks stand on a paved roof terrace inside the parapet
     # (seeded on its pavers and walkways). The passage between the restroom blocks of the south
     # bar is sealed so the terrace does not run into the building. The oval is the atrium's
@@ -293,7 +281,6 @@ for f in FLOORS.values():
     f.setdefault('box', set())
     f.setdefault('quad', set())
     f.setdefault('smooth', set())
-    f.setdefault('sign', None)
     f.setdefault('atrium', None)
     f.setdefault('hand', {})
     f.setdefault('unnamed', 0)

@@ -50,9 +50,10 @@ npm run test:a11y  # just the axe accessibility scans
 - **Every level is generated** from the CAD plan-view PDFs (`floorplan_floor-*_2025-10-02.pdf`
   in `floorplans/architect-pdfs/floorplans/`, the One Workplace furniture plans) by `tools/trace_cad/`: the vector line work
   is rasterised, each room is flood-filled from its label on the plan (seeded through the
-  door swing when the label sits in the corridor), open areas are partitioned between their
-  labels, desks in the open areas are exported as plain rectangles, and the outline is the
-  exterior wall. Doorways count as part of their room, walls are straightened, curves are
+  door swing when the label sits in the corridor), open areas are the furnished zones of
+  their labels (the desk clusters and lounge groups, so the hallways between them stay
+  blank, as on the wayfinding signs), desks in the open areas are exported as plain
+  rectangles, and the outline is the exterior wall. Corridor and lobby labels are not drawn. Doorways count as part of their room, walls are straightened, curves are
   circular arcs (a third value on a vertex is the edge's bulge), and spaces are reconciled so
   they touch without overlapping. All floors are drawn in one coordinate frame
   (the PDF point grid of the upper-floor sheets; the Lower Level sheet is registered onto it
@@ -66,10 +67,10 @@ npm run test:a11y  # just the axe accessibility scans
   `emit_ts.py` keeps the shared frame from `frame.ts`.
 - [`floorplans/README.md`](./floorplans/README.md) inventories all source PDFs, website images
   and wayfinding-sign photos, with extracted lower-level room numbers from the teaching PDF.
-  Photos live in `floorplans/builsding-signs/`. The tracer
-  registers a floor's sign onto the CAD outline and takes the piazzas' shape from it (the
-  white band around the atrium on the sign), so those sweeping curves match the signs; the
-  photos are also a handy cross-check for room names.
+  Photos live in `floorplans/builsding-signs/`. The signs and the website plans in
+  `floorplans/architect-pdfs/lowres-website-images/` show where the hallways run and how the
+  open offices are blocked out, which is what the generated open areas are checked against;
+  the photos are also a handy cross-check for room names.
 - Hearst Avenue, north of the building, is hand-placed in `src/data/gateway/streets.ts` and
   drawn on every floor for orientation.
 - Run the app; data problems (duplicate ids, unknown floors) are logged to the console.

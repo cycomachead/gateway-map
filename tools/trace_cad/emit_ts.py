@@ -1,14 +1,16 @@
 """Write src/data/gateway/level*.ts from the <floor>_rooms.json files.
 
-Usage: python3 emit_ts.py <workdir> <src/data/gateway dir>
+Usage: python3 emit_ts.py <workdir> <src/data/gateway dir> [--reframe]
 
 Every floor is mapped into one shared frame: the PDF point grid of the upper-floor sheets
 (which are all drawn in the same position), shifted so the building starts near the origin.
 The Lower Level sheet is drawn at another scale and rotation and is registered with the
 similarity transform in floors.py.
 
-The frame origin is recorded in frame.ts (`ORIGIN`), so a single floor can be regenerated
-(`gen.py ... 4`) into a workdir holding only that floor and still land in the shared frame.
+The frame origin is recorded in frame.ts (`ORIGIN`) and kept on later runs while the building
+still fits in it (`--reframe` recomputes it), so a single floor can be regenerated
+(`gen.py ... 4`) into a workdir holding only that floor and still land in the shared frame,
+and a full rerun does not shift every coordinate by a rounding point.
 """
 import json
 import math
@@ -132,6 +134,8 @@ def emit_floor(fid, d, x0, y0, out_dir):
     for r in sorted(d['rooms'], key=lambda r: (r['kind'] != 'room', r['id'])):
         if r['id'] in cfg['skip'] or not r.get('polygon'):
             continue
+        if category(r['name'], r['id']) == 'circulation':
+            continue  # corridors and lobbies (xCORRxx, x000 PIAZZA CIRCULATION) are not drawn as rooms
         rid = r['id']
         seen[rid] = seen.get(rid, 0) + 1
         if seen[rid] > 1:
@@ -228,17 +232,28 @@ def emit_floor(fid, d, x0, y0, out_dir):
             # a pocket inside a larger unnamed room (its tables) is part of that room
             if any(o.contains(g.representative_point()) for o in placed):
                 continue
-            poly = u['polygon']
             # most rooms have four walls: a region that nearly fills its bounding rectangle is
-            # drawn as that rectangle (the notches are fixtures and door recesses)
-            if g.area >= 0.85 * rw * rh:
+            # drawn as that rectangle (the notches are fixtures and door recesses); a round
+            # room (the oval on the roof) as the ellipse through its outline; any other gets
+            # the simplest corner fit that still covers it
+            from rooms import flatten_arcs
+            ell = ellipse_of(u['polygon']) if len(u['polygon']) >= 8 else None
+            e = Polygon(flatten_arcs(ell)).buffer(0) if ell else None
+            iou_ell = e.intersection(g).area / e.union(g).area if e is not None and not e.is_empty else 0.0
+            if iou_ell >= 0.92:
+                poly = ell
+            elif iou_ell > g.area / (rw * rh):
+                poly = u['polygon']  # round but not an ellipse (the oval with its flat side): the traced curve
+            elif g.area >= 0.75 * rw * rh:
                 poly = [[float(x), float(y)] for x, y in cv2.boxPoints(cv2.minAreaRect(np.array(xy(u['polygon']), np.float32)))]
-                g = Polygon(poly).buffer(0)
-                if g.difference(inside).area > 2:
-                    g = g.intersection(inside)
-                    if isinstance(g, MultiPolygon):
-                        g = max(g.geoms, key=lambda q: q.area)
-                    poly = [[float(x), float(y)] for x, y in g.simplify(0.3).exterior.coords[:-1]]
+            else:
+                poly = tidy_room(u['polygon'])
+            g = Polygon(flatten_arcs(poly)).buffer(0)
+            if g.difference(inside).area > 2:
+                g = g.intersection(inside)
+                if isinstance(g, MultiPolygon):
+                    g = max(g.geoms, key=lambda q: q.area)
+                poly = [[float(x), float(y)] for x, y in g.simplify(0.3).exterior.coords[:-1]]
             if g.intersects(taken) and g.intersection(taken).area > 2:
                 g = g.difference(taken)
                 if isinstance(g, MultiPolygon):
@@ -267,6 +282,26 @@ def emit_floor(fid, d, x0, y0, out_dir):
     lines.append('')
     open(os.path.join(out_dir, f'level{fid}.ts'), 'w').write('\n'.join(lines))
     print(f'level{fid}.ts: {len(d["rooms"])} rooms + {len(cfg["named"])} named regions, {len(d.get("desks", []))} desks')
+
+
+def tidy_room(poly):
+    """A cleaner shape for an unnumbered room traced around its fixtures: the region is
+    rounded (a 9 px close then open drops sinks, benches and door recesses) and fitted with the
+    simplest polygon of 4 to 8 line-fitted walls that still covers it, or failing that with
+    line-fitted straight runs."""
+    import cv2
+    import numpy as np
+    from rooms import EPS, _prep, straight_runs, straighten
+    pts = np.array(xy(poly), np.float32)
+    x0, y0 = np.floor(pts.min(0)).astype(int) - 8
+    x1, y1 = np.ceil(pts.max(0)).astype(int) + 8
+    m = np.zeros((y1 - y0, x1 - x0), np.uint8)
+    cv2.fillPoly(m, [np.round(pts - [x0, y0]).astype(np.int32)], 255)
+    m = _prep(m, 0, 9)
+    fit = straighten(m, ns=(4, 5, 6, 8), min_iou=0.85, max_shift=30, max_dev=None) or straight_runs(m, EPS, eps_coarse=10, min_len=30)
+    if not fit or len(fit) < 3:
+        return poly
+    return [[round(float(x) + x0, 1), round(float(y) + y0, 1)] for x, y in fit]
 
 
 def resolve_overlaps(entries, min_area=2.0):
@@ -398,14 +433,19 @@ def fmt_extra(extra):
     return '{ ' + ', '.join(parts) + ' }'
 
 
-def main(workdir, out_dir):
+def main(workdir, out_dir, reframe=False):
     data = load(workdir)
     frame_path = os.path.join(out_dir, 'frame.ts')
-    if len(data) < len(FLOORS) and os.path.exists(frame_path):
-        # Only some floors were traced: keep the frame the other levels are already drawn in.
+    fits = False
+    if os.path.exists(frame_path) and not reframe:
+        # Keep the frame the levels are already drawn in (so hand-placed coordinates such as
+        # the street stay put) as long as the traced outlines still fit in it; `--reframe`
+        # forces a new one. Only some floors traced: the frame is kept regardless.
         x0, y0, w, h = read_frame(frame_path)
-        print(f'floors {", ".join(sorted(data))} only: keeping the existing frame')
-    else:
+        nx, ny, nw, nh = frame(data)
+        fits = len(data) < len(FLOORS) or (nx >= x0 - 1 and ny >= y0 - 1 and nx + nw <= x0 + w + 1 and ny + nh <= y0 + h + 1)
+        print(f'floors {", ".join(sorted(data))}: keeping the existing frame' if fits else 'traced outlines fall outside the existing frame: recomputing it')
+    if not fits:
         x0, y0, w, h = frame(data)
         open(frame_path, 'w').write(
             '// GENERATED by tools/trace_cad/emit_ts.py — do not edit by hand.\n'
@@ -420,4 +460,5 @@ def main(workdir, out_dir):
 
 
 if __name__ == '__main__':
-    main(sys.argv[1], sys.argv[2])
+    args = [a for a in sys.argv[1:] if a != '--reframe']
+    main(args[0], args[1], reframe='--reframe' in sys.argv)
