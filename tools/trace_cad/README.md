@@ -1,14 +1,17 @@
 # trace_cad — floor data from the CAD plan-view PDFs
 
 Generates `src/data/gateway/level{0..5}.ts` and `frame.ts` from the One Workplace furniture
-plans (`Gateway_Plan_View_10_2_2025-Floor_{Lower_Level,1,2,3,4,5}.pdf`, one 48"×36" vector sheet
-each; not committed because of their size). Requires `pymupdf`, `numpy`, `opencv-python-headless`,
-`scipy`, `scikit-image`.
+plans (`floorplan_floor-{lower-level,1,2,3,4,5}_2025-10-02.pdf`, one 48"×36" vector sheet
+each, committed in `floorplans/architect-pdfs/floorplans/`). Requires `pymupdf`, `numpy`, `opencv-python-headless`,
+`scipy`, `scikit-image`, `shapely`.
+
+Run from `tools/trace_cad/` with a temporary workdir outside the repository. Only `gen.py`
+is slow; `emit_ts.py` runs in seconds, so tweaks to the emitter never need a re-trace.
 
 ```sh
-python3 gen.py <dir with the PDFs> <workdir>          # extract + segment every floor (~10 min)
-python3 gen.py <dir with the PDFs> <workdir> 3        # just floor 3
-python3 emit_ts.py <workdir> ../../src/data/gateway   # write the TypeScript modules
+python3 gen.py ../../floorplans/architect-pdfs/floorplans <workdir>          # extract + segment every floor (~10 min)
+python3 gen.py ../../floorplans/architect-pdfs/floorplans <workdir> 3        # just floor 3
+python3 emit_ts.py <workdir> ../../src/data/gateway   # write the TypeScript modules (--reframe: new frame)
 ```
 
 A workdir holding only some floors is fine: `emit_ts.py` then keeps the shared frame recorded in
@@ -17,7 +20,8 @@ without moving the others.
 
 `<workdir>` gets, per sheet, `<pdf>_geom.json` (cached vector extraction), `<pdf>_rooms.json`
 (the result) and `<pdf>_debug.png` (overlay: filled rooms, outlined open areas, red unlabelled
-regions with their index, orange desks, magenta outline, grey exterior). Extracting a sheet needs ~1.5 GB of
+regions with their index, blue desks, orange furniture clusters with the open labels as red
+dots and their cells in grey, magenta outline, grey exterior). Extracting a sheet needs ~1.5 GB of
 RAM, so floors are processed one at a time.
 
 ## How it works
@@ -61,14 +65,12 @@ RAM, so floors are processed one at a time.
      hole in it (`holes`, drawn with an even-odd fill). Named cores that resolve to one
      region (the three elevator shafts of a bank) are split between their points, and
      restrooms, elevators and stairs are emitted as boxes aligned with their longest wall.
-   - The piazzas take their shape from the wayfinding sign photo named in the floor's `sign`
-     (`sign.py`): the sign's simplified map is registered onto the CAD outline with a
-     homography fitted by iterative closest point (median residual under 3 px), its white
-     band between the wings is the piazza, split between the piazza labels by a Voronoi
-     diagram and cut away from the rooms and cores the CAD knows precisely. The atrium is
-     the ellipse fitted to its traced outline. Porches (and any label in the floor's `smooth`
-     set) are drawn as sweeping shapes instead: their cell is closed and opened with a 25 px
-     disc so door notches and office corners vanish, and inset 4 px from the rooms.
+   - The atrium is the ellipse fitted to its traced outline. Piazzas and porches (and any
+     label in the floor's `smooth` set) are drawn as sweeping shapes: their lounge groups are
+     joined across the walkways between them (an 81 px closing), thin tails opened away, and
+     the outline low-pass filtered along its length (`sweep`), so a crescent of lounge seats
+     beside the atrium or a band of them along the curved glass comes out as a smooth curve
+     that the arc fitter turns into arcs.
    - Curves become circular arcs: a run of gently turning edges that lies within 1 px of a
      circle (radius at least 40 px, sweep at most 100°) collapses to one edge carrying a
      DXF-style bulge, which the map draws as a true arc; longer curves split into a few arcs.
@@ -96,8 +98,20 @@ RAM, so floors are processed one at a time.
      to their minimum-area bounding rectangle.
    - Labels whose fill still escapes into the corridor network are open areas: the unenclosed
      free space (on the furniture-free raster) is partitioned between them by geodesic
-     distance. The desks standing in them (bold quads of worksurface size) are exported as
-     `desks`, which the map draws as plain rectangles under the open areas.
+     distance, but each label's open area is only the *furnished* part of its cell, so the
+     hallways between the workspaces stay blank, as on the wayfinding signs and the website
+     plans. The furniture (every furniture-flagged stroke and curve, and the furniture quads;
+     door swings and columns erased) is closed across the aisles between desks (29 px, a
+     hallway is wider) into clusters; a cluster belongs to the labels whose cells hold at
+     least a fifth of it (one owner takes it whole, several split it along the cell
+     boundary). An open office is the block spanned by its desk groups: their convex hull,
+     widened 10 px for the chairs, kept inside the free space (so it reaches the walls and a
+     room standing in it becomes a hole) and dropped for the largest group alone when it
+     would mostly be empty floor. A cluster filling its bounding rectangle is drawn as that
+     rectangle, an irregular one as the simplest 4–8 corner fit that covers it. Corridor and
+     lobby labels (`xCORRxx`, `x000 PIAZZA CIRCULATION`) are not drawn at all. The desks
+     standing in the open areas (bold quads of worksurface size) are exported as `desks`,
+     which the map draws as plain rectangles under them.
    - The exterior is the fill from the sheet corner; the outline is the outer contour of the
      non-exterior components that hold labels (Floor 1 has two: the covered plaza between the
      Southwest block and the main building is marked exterior in `floors.py`).
@@ -117,7 +131,8 @@ RAM, so floors are processed one at a time.
    - Floors 1–3 have stairs winding down inside the atrium's rail, so the opening never closes
      as one region; the floor's `atrium` ellipse replaces the stair pieces inside it.
    - Floor 5's indoor blocks stand on a paved roof terrace (`terrace` seeds on its pavers and
-     walkways). The deck is one open area with the blocks as its holes.
+     walkways). The deck is one open area with the blocks as its holes, its edges line-fitted
+     runs like the outline's.
    - Plans that number only the furnished rooms (Lower Level, 1, 5) set `unnamed`: every
      other enclosed region of room size is emitted as an unnumbered room (a rectangle when it
      nearly fills one), leaving out strips along the facades, corridors and pockets inside a
@@ -126,12 +141,56 @@ RAM, so floors are processed one at a time.
      side open to the neighbouring workspace, the tiered lecture halls) are drawn by hand in
      the floor's `hand`, from wall coordinates read off the sheet.
 3. `floors.py` — per-floor configuration: label style, hand seeds, gap-sealing strokes, named
-   regions (identified by a point inside them), hand polygons, boxed rooms, and the similarity transform
+   regions (identified by a point inside them), hand polygons, boxed rooms, renamed rooms
+   (`rename`, for a room whose use differs from the plan's label), and the similarity transform
    that registers the Lower Level sheet (drawn at 1/8" = 1' and rotated) onto the upper-floor
    sheets; it was fitted on the six elevator shafts and has a residual below 0.1 pt. Also maps
    the plan's room names to categories and display names.
-4. `emit_ts.py` — writes the modules. A final pass guarantees rooms never overlap: arcs fitted
+4. `emit_ts.py` — writes the modules. Unnumbered rooms (plans that set `unnamed`) are drawn
+   as the ellipse through their outline when that covers them (the oval room on the roof),
+   else as their bounding rectangle when they nearly fill it, else rounded (a 9 px close then
+   open drops sinks, benches and door recesses) and fitted with the simplest 4–8 corner
+   polygon that covers them. Walls of neighbouring rooms are then made parallel
+   (`align_walls`): rooms are fitted one by one, so the two faces of a shared partition, or
+   the exterior walls of a row of offices along a facade, come out a degree or two apart and
+   the gap between them is a wedge. Straight edges of different polygons within 6° of each
+   other, within 8 px of each other's line (14 px against the outline, a wall thickness) and
+   overlapping along it or stopping within 25 px (a doorway) form a group, and the group is
+   turned to one angle, the length-weighted mean of its tilts (the midpoint for two walls of a
+   kind), each edge about its own midpoint; a group holding a stretch of the outline takes the
+   outline's angle instead. Corners are rebuilt as the intersections of the turned walls (a
+   corner that would move more than 6 px, next to an arc or a near-collinear jog, is projected
+   onto the turned wall instead). A final pass guarantees rooms never overlap: arcs fitted
    after the reconciliation, boxed cores, ellipses and hand shapes can still bite a neighbour,
    so each polygon gives up what a higher-priority one covers (enclosed rooms, then cores and
-   named regions, then open areas, then unnumbered rooms). Coordinates are PDF points of the upper-floor sheets,
-   shifted so the building starts near the origin (`frame.ts`).
+   named regions, then open areas, then unnumbered rooms); an overlap nowhere wider than
+   1.5 px is a shared wall whose faces were just turned parallel and is left alone, and any
+   spike a cut leaves behind is removed. Coordinates are PDF points of the upper-floor sheets,
+   shifted so the building starts near the origin (`frame.ts`); the frame is kept across reruns
+   while the building still fits in it (`--reframe` recomputes it).
+
+## Source inventory and lower-level corrections
+
+See [the reference inventory](../../floorplans/README.md) for every source file and the
+room-number/seat-count key extracted from teaching PDF pages 3, 4 and 10.
+`LL_TEACHING` in `floors.py` supplies the nine classroom numbers and group-study room B1013
+that the CAD furniture plan omits. Its wall polygons omit door swings and furniture notches
+while retaining the curved walls. The wayfinding-sign photos in `builsding-signs/` are a
+cross-check for room names and for where the hallways run, not an input to the trace.
+
+The storage closets wedged between neighbouring classrooms (and the
+one between B1008 and B1009, via the floor's `blank` points) are left off the map, so the
+classrooms meet. B1040 is a five-walled room whose doors face B1026 on a straight corner wall.
+The two rounded open-study areas are numbered B1030 (west curve) and B1010 (inside the main
+stair) and drawn as ellipses fitted to their curved walls; the main stair is the band between
+B1010 and the stair's outer wall (`_ellipse` and `_band` in `floors.py`).
+
+The East Stair (Floors 1–4) is a `manual` four-sided shape around its flight and the opening
+beside it: the traced region ran out along the corridor by the facade.
+
+On Floor 1 the lecture halls 1210 and 1220 are the red outlines on pages 21 and 18 of the
+Teaching Spaces PDF, registered onto the CAD sheet with a similarity fitted on the structural
+columns along the halls (residual under 2 pt); 1220 gives way to 1210 where the outlines cross,
+and the drone lab 1230 is drawn from its walls below 1220. The hallway along the backs of all
+three to the southeast corner is left blank like every other hallway (the storage rooms behind
+the halls are unnumbered on the plan and come out as unnumbered rooms where they are enclosed).

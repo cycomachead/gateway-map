@@ -8,7 +8,9 @@ import * as l2 from './gateway/level2';
 import * as l3 from './gateway/level3';
 import * as l4 from './gateway/level4';
 import * as l5 from './gateway/level5';
+import { OCCUPANTS } from './gateway/occupants';
 import { hearst } from './gateway/streets';
+import { assignOccupants } from './occupants';
 import type { Building, Floor, Space } from './types';
 
 /**
@@ -39,7 +41,13 @@ const floors: Floor[] = levels.map(([id, label, level, l]) => ({
   ...(l.desks?.length ? { desks: l.desks.map(pts) } : {}),
 }));
 
-const spaces: Space[] = levels.flatMap(([id, , , l]) => spacesFrom(id, l.rooms));
+const { spaces, unmatched } = assignOccupants(
+  levels.flatMap(([id, , , l]): Space[] => spacesFrom(id, l.rooms)),
+  OCCUPANTS,
+);
+
+/** Directory rooms (see `gateway/occupants.ts`) that match no space on any floor. */
+export const unplacedOccupantRooms: string[] = unmatched;
 const pois = levels.flatMap(([id, , , l]) => poisFrom(id, l.pois));
 
 export const building: Building = {

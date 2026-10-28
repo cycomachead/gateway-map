@@ -59,9 +59,14 @@ test('open workspaces show their desks, and the research labs are plain boxes', 
     const d = (await page.locator(`[data-space-id="${id}"] .space__shape`).getAttribute('d')) ?? '';
     expect(d.match(/[ML]/g)?.length, `${id} should be a box`).toBe(4);
   }
-  // Huddle room 4151 stands inside open office 4160, which is drawn with a hole for it.
+  // Open offices are the blocks spanned by their desks: 4330 is a plain quad like on the
+  // wayfinding signs, 4160 a single compact polygon, and the hallways between them (the plan's
+  // corridor labels) are left blank, not drawn as rooms.
+  const quad = (await page.locator('[data-space-id="4-4330"] .space__shape').getAttribute('d')) ?? '';
+  expect(quad.match(/[MLA]/g)?.length).toBe(4);
   const open = (await page.locator('[data-space-id="4-4160"] .space__shape').getAttribute('d')) ?? '';
-  expect(open.match(/M/g)?.length).toBe(2);
+  expect(open.match(/M/g)?.length).toBe(1);
+  expect(await page.locator('#map [data-space-id="4-4corr18"]').count()).toBe(0);
 });
 
 test('keyboard users can select a room with Enter', async ({ page }) => {
@@ -140,6 +145,53 @@ test('every floor shows its atrium, and floor 5 its roof terrace', async ({ page
   // The terrace wraps around the indoor blocks: they are holes in it.
   const d = (await page.locator('[data-space-id="5-terrace"] .space__shape').getAttribute('d')) ?? '';
   expect(d.match(/M/g)?.length).toBeGreaterThan(1);
+});
+
+test('the lower level has round study spaces B1030 and B1010', async ({ page }) => {
+  await page.getByRole('button', { name: 'LL', exact: true }).click();
+  for (const id of ['0-b1030', '0-b1010']) {
+    await expect(page.locator(`#map [data-space-id="${id}"]`)).toHaveClass(/space--study/);
+  }
+  await expect(page.locator('#map [data-space-id="0-main-stair"]')).toHaveCount(1);
+});
+
+test('the East Stair stays inside the building on every floor', async ({ page }) => {
+  for (const label of ['1', '2', '3', '4']) {
+    await page.getByRole('button', { name: label, exact: true }).click();
+    const outside = await page.locator(`#map [data-space-id="${label}-east-stair"] .space__shape`).evaluate((stair: SVGPathElement) => {
+      const outlines = [...document.querySelectorAll<SVGPathElement>('#map .floor__outline')];
+      const length = stair.getTotalLength();
+      let count = 0;
+      for (let i = 0; i < 100; i++) {
+        const p = stair.getPointAtLength((length * i) / 100);
+        if (!outlines.some((o) => o.isPointInFill(new DOMPoint(p.x, p.y)))) count++;
+      }
+      return count;
+    });
+    expect(outside).toBe(0);
+  }
+});
+
+test('the Floor 1 lecture halls and drone lab never overlap, and the hallway behind them is blank', async ({ page }) => {
+  expect(await page.locator('#map [data-space-id="1-east-hallway"]').count()).toBe(0);
+  const shared = await page.evaluate(() => {
+    const shapes = ['1210', '1220', '1230'].map((id) => document.querySelector<SVGPathElement>(`[data-space-id="1-${id}"] .space__shape`)!);
+    let count = 0;
+    for (let i = 0; i < shapes.length; i++) {
+      for (let j = i + 1; j < shapes.length; j++) {
+        const a = shapes[i].getBBox();
+        for (let x = a.x; x <= a.x + a.width; x += 4) {
+          for (let y = a.y; y <= a.y + a.height; y += 4) {
+            const p = new DOMPoint(x, y);
+            if (shapes[i].isPointInFill(p) && shapes[j].isPointInFill(p)) count++;
+          }
+        }
+      }
+    }
+    return count;
+  });
+  // shared walls may touch a sample point or two, an overlap covers many
+  expect(shared).toBeLessThan(5);
 });
 
 test('exterior doors are entrance markers, not notches in the outline', async ({ page }) => {

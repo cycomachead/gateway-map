@@ -1,14 +1,15 @@
 import { CATEGORY_LABELS, type Building, type Space } from '../data/types';
 import type { Store } from '../state';
-
-function esc(s: string): string {
-  return s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
-}
+import { esc } from './html';
+import { occupantNames } from './names';
 
 function spaceDetails(space: Space, floorLabel: string): string {
   const facts: string[] = [`<dt>Floor</dt><dd>${esc(floorLabel)}</dd>`];
   if (space.wing) facts.push(`<dt>Wing</dt><dd>${esc(space.wing)}</dd>`);
   facts.push(`<dt>Type</dt><dd>${CATEGORY_LABELS[space.category]}</dd>`);
+  if (space.occupants?.length) {
+    facts.push(`<dt>${space.occupants.length === 1 ? 'Occupant' : 'Occupants'}</dt><dd class="occupants">${space.occupants.map(esc).join('<br>')}</dd>`);
+  }
   if (space.capacity) facts.push(`<dt>Capacity</dt><dd>${space.capacity}</dd>`);
   if (space.tags?.length) {
     facts.push(`<dt>Tags</dt><dd>${space.tags.map((t) => `<span class="tag">${esc(t)}</span>`).join(' ')}</dd>`);
@@ -31,7 +32,9 @@ function floorSummary(building: Building, floorId: string, categories: Set<strin
     .map(
       (s) =>
         `<li><button type="button" class="list-btn" data-space-id="${esc(s.id)}">
-          <span class="swatch swatch--${s.category}"></span>${esc(s.name)}
+          <span class="swatch swatch--${s.category}"></span><span class="list-btn__text">${esc(s.name)}${
+            occupantNames(s) ? `<small class="list-btn__who">${esc(occupantNames(s))}</small>` : ''
+          }</span>
         </button></li>`,
     )
     .join('');

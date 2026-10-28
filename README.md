@@ -15,6 +15,7 @@ npm run build      # outputs to dist/
 npm run preview    # serve the production build
 npm test           # Playwright end-to-end + axe accessibility tests (builds first)
 npm run test:a11y  # just the axe accessibility scans
+npm run occupants  # re-import faculty office assignments from the EECS directory
 ```
 
 ## CI and deployment
@@ -47,12 +48,13 @@ npm run test:a11y  # just the axe accessibility scans
 
 - Floors, spaces, and points of interest are assembled in `src/data/building.ts`; the
   per-floor data lives in `src/data/gateway/level{0..5}.ts` (`0` is the Lower Level).
-- **Every level is generated** from the CAD plan-view PDFs (`Gateway_Plan_View_10_2_2025-
-  Floor_*.pdf`, the One Workplace furniture plans) by `tools/trace_cad/`: the vector line work
+- **Every level is generated** from the CAD plan-view PDFs (`floorplan_floor-*_2025-10-02.pdf`
+  in `floorplans/architect-pdfs/floorplans/`, the One Workplace furniture plans) by `tools/trace_cad/`: the vector line work
   is rasterised, each room is flood-filled from its label on the plan (seeded through the
-  door swing when the label sits in the corridor), open areas are partitioned between their
-  labels, desks in the open areas are exported as plain rectangles, and the outline is the
-  exterior wall. Doorways count as part of their room, walls are straightened, curves are
+  door swing when the label sits in the corridor), open areas are the furnished zones of
+  their labels (the desk clusters and lounge groups, so the hallways between them stay
+  blank, as on the wayfinding signs), desks in the open areas are exported as plain
+  rectangles, and the outline is the exterior wall. Corridor and lobby labels are not drawn. Doorways count as part of their room, walls are straightened, curves are
   circular arcs (a third value on a vertex is the edge's bulge), and spaces are reconciled so
   they touch without overlapping. All floors are drawn in one coordinate frame
   (the PDF point grid of the upper-floor sheets; the Lower Level sheet is registered onto it
@@ -64,10 +66,20 @@ npm run test:a11y  # just the axe accessibility scans
   (see `tools/trace_cad/README.md`), or edit the `.ts` file directly if you don't need to
   regenerate. A single floor can be regenerated on its own: `gen.py <pdf dir> <workdir> 4` then
   `emit_ts.py` keeps the shared frame from `frame.ts`.
-- `floorplans/` keeps the perspective-corrected photos of the wayfinding signs. The tracer
-  registers a floor's sign onto the CAD outline and takes the piazzas' shape from it (the
-  white band around the atrium on the sign), so those sweeping curves match the signs; the
-  photos are also a handy cross-check for room names.
+- [`floorplans/README.md`](./floorplans/README.md) inventories all source PDFs, website images
+  and wayfinding-sign photos, with extracted lower-level room numbers from the teaching PDF.
+  Photos live in `floorplans/builsding-signs/`. The signs and the website plans in
+  `floorplans/architect-pdfs/lowres-website-images/` show where the hallways run and how the
+  open offices are blocked out, which is what the generated open areas are checked against;
+  the photos are also a handy cross-check for room names.
+- **Who sits where** lives in `src/data/gateway/occupants.ts`: plan room number → names. A
+  room with occupants shows their names under its number on the map, in the floor list, in the
+  tooltip and in the room details, and the search box finds the room by any part of a name.
+  `npm run occupants` regenerates the file from the EECS faculty directory
+  (<https://www2.eecs.berkeley.edu/Faculty/Lists/faculty.html>), keeping only faculty with a
+  Gateway office; the *Refresh faculty occupants* workflow does the same monthly or on demand
+  and opens a pull request. See [`tools/faculty/README.md`](./tools/faculty/README.md). Rooms
+  that match no space are logged to the console on start.
 - Hearst Avenue, north of the building, is hand-placed in `src/data/gateway/streets.ts` and
   drawn on every floor for orientation.
 - Run the app; data problems (duplicate ids, unknown floors) are logged to the console.
