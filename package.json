@@ -11,7 +11,8 @@
     "test": "playwright test",
     "test:a11y": "playwright test tests/e2e/a11y.spec.ts",
     "test:report": "playwright show-report",
-    "occupants": "python3 tools/faculty/import_faculty.py"
+    "occupants": "python3 tools/faculty/import_faculty.py",
+    "departments": "python3 tools/departments/import_departments.py"
   },
   "devDependencies": {
     "@axe-core/playwright": "^4.13.0",

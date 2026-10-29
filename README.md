@@ -16,6 +16,7 @@ npm run preview    # serve the production build
 npm test           # Playwright end-to-end + axe accessibility tests (builds first)
 npm run test:a11y  # just the axe accessibility scans
 npm run occupants  # re-import faculty office assignments from the EECS directory
+npm run departments  # re-import department assignments from the colour space-assignment sheets
 ```
 
 ## CI and deployment
@@ -74,7 +75,14 @@ credits the author and the language models that helped build the site.
   via the elevator shafts), so walls and cores line up exactly when switching floors.
 - Rooms the plan does not number (stairs, elevators, restrooms, the atrium, the lecture
   hall) are named in `tools/trace_cad/floors.py`, which also maps the plan's room names to
-  categories and display names. To change a generated room, edit that file and rerun
+  categories and display names. Every office is an "Office" on the map, whatever the plan
+  calls it. The multi-stall restrooms of the Northeast core are the men's and those of the
+  Southwest core the women's (the plans do not say; the Lower Level's are labelled gender
+  inclusive and single-user), the small single-occupancy rooms beside them are gender neutral,
+  and Floor 5's four restrooms stand in its south bar. Restrooms carry the standing man / woman
+  pictograms (`icon` on the room, drawn above the label), and a multi-line label is wrapped
+  small under it, so a small restroom gets its sign and name. Each elevator bank is three equal
+  squares side by side (the Lower Level sheet draws its shafts smaller, so its squares are too). To change a generated room, edit that file and rerun
   `python3 gen.py <pdf dir> <workdir> && python3 emit_ts.py <workdir> ../../src/data/gateway`
   (see `tools/trace_cad/README.md`), or edit the `.ts` file directly if you don't need to
   regenerate. A single floor can be regenerated on its own: `gen.py <pdf dir> <workdir> 4` then
@@ -93,6 +101,18 @@ credits the author and the language models that helped build the site.
   Gateway office; the *Refresh faculty occupants* workflow does the same monthly or on demand
   and opens a pull request. See [`tools/faculty/README.md`](./tools/faculty/README.md). Rooms
   that match no space are logged to the console on start.
+- **Which department a room belongs to** lives in `src/data/gateway/departments.ts`: space id →
+  department, plus the Level 1 rooms marked reservable. `npm run departments` regenerates it from
+  the colour space-assignment sheets (`floorplans/architect-pdfs/floorplans/space-assignments_floor-*_2026-06-21.pdf`),
+  in which each department's rooms are shaded and a legend names the colours; a room is tagged
+  with the department whose shading covers at least half of it. See
+  [`tools/departments/README.md`](./tools/departments/README.md). The department shows in the
+  room details, under the room in the floor list and in search results, and search finds rooms
+  by department name. The sheets' line work is identical to the plans the map is traced from, so
+  they add no wall geometry.
+- The side panel lists the current floor's rooms; **All floors** switches it to every floor at
+  once, grouped by floor, and picking a room from another floor opens that floor. Rooms the plan
+  leaves unnumbered (drawn as plain "Room"s) are not listed.
 - Hearst Avenue, north of the building, is hand-placed in `src/data/gateway/streets.ts` and
   drawn on every floor for orientation.
 - Run the app; data problems (duplicate ids, unknown floors) are logged to the console.

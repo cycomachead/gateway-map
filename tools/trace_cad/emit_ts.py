@@ -65,6 +65,13 @@ def box_of(poly):
 
 
 BOXED_TAGS = {'restroom', 'elevator', 'stairs'}
+# the pictogram the map draws above a room's label, by tag (restroom signs)
+ICONS = {'men': 'man', 'women': 'woman', 'all gender': 'all-gender'}
+
+
+def with_icon(extra):
+    icon = next((ICONS[t] for t in extra.get('tags', []) if t in ICONS), None)
+    return {**extra, 'icon': icon} if icon else extra
 
 
 def ellipse_of(poly, n=48):
@@ -108,7 +115,7 @@ def fmt_poly(poly):
 
 
 def ts_str(s):
-    return "'" + s.replace('\\', '\\\\').replace("'", "\\'") + "'"
+    return "'" + s.replace('\\', '\\\\').replace("'", "\\'").replace('\n', '\\n') + "'"
 
 
 def emit_floor(fid, d, x0, y0, out_dir):
@@ -194,11 +201,11 @@ def emit_floor(fid, d, x0, y0, out_dir):
             if trimmed or BOXED_TAGS & set(tags):
                 poly = [[float(x), float(y)] for x, y in g.simplify(0.3).exterior.coords[:-1]]
         placed.append(Polygon(xy(poly)).buffer(0))
-        extra = {'name': name, 'label': label, 'tags': tags}
+        extra = with_icon({'name': name, 'label': label, 'tags': tags})
         w = wing(uid) or ('Northeast' if uid.startswith('ne-') else 'Southwest' if uid.startswith('sw-') else None)
         entries.append((1, w, uid, cat, poly, extra))
     for uid, cat, name, label, tags, poly in cfg['manual']:
-        extra = {'name': name, 'label': label, 'tags': tags}
+        extra = with_icon({'name': name, 'label': label, 'tags': tags})
         w = wing(uid)
         poly = clip_to(poly, d['outlines'])
         placed.append(Polygon(xy(poly)).buffer(0))
@@ -516,40 +523,45 @@ def clip_to(poly, outlines):
     return [[float(x), float(y)] for x, y in c]
 
 
-def split_shared(poly, points):
-    """Split a polygon between seed points (nearest point wins); each part is boxed, since
-    the regions that share one polygon are elevator shafts."""
-    import cv2
+def min_area_rect(points):
+    """(centre, unit vector along the long side, length, width) of the smallest rectangle
+    around the points, trying every edge direction of their hull (no OpenCV needed)."""
     import numpy as np
-    pts = np.array(xy(poly), np.float32)
-    x0, y0 = np.floor(pts.min(0)).astype(int) - 2
-    x1, y1 = np.ceil(pts.max(0)).astype(int) + 2
-    a = np.zeros((y1 - y0, x1 - x0), np.uint8)
-    cv2.fillPoly(a, [np.round(pts - [x0, y0]).astype(np.int32)], 255)
-    ys, xs = np.nonzero(a)
-    P = np.array(points, float) - [x0, y0]
-    owner = ((xs[:, None] - P[None, :, 0]) ** 2 + (ys[:, None] - P[None, :, 1]) ** 2).argmin(1)
-    out = []
-    for i in range(len(points)):
-        part = np.zeros_like(a)
-        part[ys[owner == i], xs[owner == i]] = 255
-        cs, _ = cv2.findContours(part, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-        if not cs:
-            out.append(poly)
+    P = np.array(points, float)
+    best = None
+    for i in range(len(P)):
+        d = P[(i + 1) % len(P)] - P[i]
+        n = np.linalg.norm(d)
+        if n < 1e-6:
             continue
-        box = cv2.boxPoints(cv2.minAreaRect(max(cs, key=cv2.contourArea))) + [x0, y0]
-        out.append([[float(x), float(y)] for x, y in box])
-    # the boxes are fitted independently, so trim each by the ones before it
-    from shapely.geometry import MultiPolygon, Polygon
-    trimmed = []
-    for b in out:
-        g = Polygon(b).buffer(0)
-        for t in trimmed:
-            g = g.difference(t)
-            if isinstance(g, MultiPolygon):
-                g = max(g.geoms, key=lambda q: q.area)
-        trimmed.append(g)
-    return [[[float(x), float(y)] for x, y in g.simplify(0.3).exterior.coords[:-1]] for g in trimmed]
+        u = d / n
+        v = np.array([-u[1], u[0]])
+        a, b = P @ u, P @ v
+        L, W = a.max() - a.min(), b.max() - b.min()
+        if best is None or L * W < best[0]:
+            c = u * (a.max() + a.min()) / 2 + v * (b.max() + b.min()) / 2
+            best = (L * W, c, u, L, W) if L >= W else (L * W, c, v, W, L)
+    _, c, u, L, W = best
+    return c, u, L, W
+
+
+def split_shared(poly, points):
+    """Split a polygon between seed points: the regions that share one polygon are the
+    shafts of an elevator bank, so the bank is drawn as equal squares side by side along
+    the bank's long axis (the n-th of the bank's length), one per seed, in the seeds' order
+    along that axis."""
+    import numpy as np
+    c, u, L, _ = min_area_rect(xy(poly))
+    v = np.array([-u[1], u[0]])
+    n = len(points)
+    side = L / n
+    along = (np.array(points, float) - c) @ u
+    cells = {}
+    for rank, i in enumerate(np.argsort(along)):
+        cc = c + u * ((rank - (n - 1) / 2) * side)
+        cells[int(i)] = [[round(float(x), 1), round(float(y), 1)] for x, y in
+                         (cc + u * sx * side / 2 + v * sy * side / 2 for sx, sy in ((-1, -1), (1, -1), (1, 1), (-1, 1)))]
+    return [cells[i] for i in range(n)]
 
 
 def union_polys(polys):

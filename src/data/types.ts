@@ -51,11 +51,19 @@ export const CATEGORY_LABELS: Record<SpaceCategory, string> = {
   circulation: 'Circulation',
 };
 
+/** Pictograms drawn above a room's label (the restroom signs). */
+export type SpaceIcon = 'man' | 'woman' | 'all-gender';
+
 export interface Space {
   id: string;
   name: string;
-  /** Short text drawn on the map (defaults to `name`); e.g. just the room number. */
+  /**
+   * Short text drawn on the map (defaults to `name`); e.g. just the room number. Lines after
+   * a newline are drawn smaller under the first one.
+   */
   label?: string;
+  /** A pictogram drawn above the label. */
+  icon?: SpaceIcon;
   floorId: string;
   category: SpaceCategory;
   /** Closed outline; last point is implicitly joined to the first. Edges may be arcs via `bulge`. */
@@ -69,6 +77,8 @@ export interface Space {
   capacity?: number;
   /** People whose office this is (e.g. the faculty member assigned to a faculty office). */
   occupants?: string[];
+  /** The department the room is assigned to on the space-assignment plans (e.g. "EECS"). */
+  department?: string;
 }
 
 export type PoiKind =

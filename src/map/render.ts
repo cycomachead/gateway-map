@@ -1,4 +1,4 @@
-import type { Building, Floor, Poi, Space, Street } from '../data/types';
+import type { Building, Floor, Poi, Space, SpaceIcon, Street } from '../data/types';
 import { POI_LABELS } from '../data/types';
 import { nameLines } from '../data/occupants';
 import { centroid, toPath } from './geometry';
@@ -26,6 +26,17 @@ const POI_GLYPH: Record<Poi['kind'], string> = {
   meditation: '❁',
 };
 
+/** Restroom pictograms (24 × 24 boxes): a standing man, a woman, and the two side by side. */
+const ICON_PATHS: Record<SpaceIcon, string> = {
+  man: 'M12 1a2.4 2.4 0 1 1 0 4.8A2.4 2.4 0 0 1 12 1zM8.6 7h6.8l1.8 7.4h-1.9l-1.2-4.9V23h-2.2v-7.8h-1V23H8.7V9.5l-1.2 4.9H5.6z',
+  woman: 'M12 1a2.4 2.4 0 1 1 0 4.8A2.4 2.4 0 0 1 12 1zM9.2 7h5.6l2.1 7.4h-1.8l-.9-3.3 1.9 6.4h-2.3V23h-2v-5.5h-.6V23h-2v-5.5H6.9l1.9-6.4-.9 3.3H6.1z',
+  'all-gender':
+    'M7 2.2a1.9 1.9 0 1 1 0 3.8 1.9 1.9 0 0 1 0-3.8zM4.4 7h5.2l1.4 5.9H9.5l-.9-3.9V23H6.9v-6.2h-.8V23H4.4V9l-.9 3.9H2z' +
+    'M17 2.2a1.9 1.9 0 1 1 0 3.8 1.9 1.9 0 0 1 0-3.8zM14.8 7h4.4l1.7 5.9h-1.5l-.7-2.6 1.5 5.1h-1.9V23h-1.6v-4.6h-.5V23h-1.6v-4.6h-1.9l1.5-5.1-.7 2.6h-1.5z',
+};
+
+const ICON_SIZE = 16;
+
 function renderSpace(space: Space): SVGGElement {
   const g = el('g', {
     class: `space space--${space.category}`,
@@ -38,24 +49,37 @@ function renderSpace(space: Space): SVGGElement {
   g.appendChild(el('path', { d, class: 'space__shape' }));
 
   const c = centroid(space.polygon);
+  // A pictogram (the restroom signs) sits above the text, the two centred as one block.
+  const iconHeight = space.icon ? ICON_SIZE + 2 : 0;
+  if (space.icon) {
+    g.appendChild(
+      el('path', {
+        d: ICON_PATHS[space.icon],
+        class: 'space__icon',
+        transform: `translate(${c.x - ICON_SIZE / 2} ${c.y - iconHeight / 2 - ICON_SIZE / 2 - 2}) scale(${ICON_SIZE / 24})`,
+      }),
+    );
+  }
   const label = el('text', {
     x: c.x,
-    y: c.y,
+    y: c.y + iconHeight / 2,
     class: 'space__label',
     'text-anchor': 'middle',
     'dominant-baseline': 'middle',
   });
-  const names = (space.occupants ?? []).flatMap(nameLines);
-  if (!names.length) {
-    label.textContent = space.label ?? space.name;
+  // The label's lines (a restroom's "Gender / Neutral" is wrapped, and then drawn small
+  // throughout), then each occupant's name wrapped onto short lines, centred as one block.
+  const [title, ...more] = (space.label ?? space.name).split('\n');
+  const lines = [...more, ...(space.occupants ?? []).flatMap(nameLines)];
+  if (!lines.length) {
+    label.textContent = title;
   } else {
-    // The room number, then each occupant's name wrapped onto short lines, centred as one block.
     const lineHeight = 10;
-    const title = el('tspan', { x: c.x, dy: -(names.length * lineHeight) / 2 });
-    title.textContent = space.label ?? space.name;
-    label.appendChild(title);
-    names.forEach((line, i) => {
-      const t = el('tspan', { x: c.x, dy: i === 0 ? lineHeight + 2 : lineHeight, class: 'space__label-name' });
+    const first = el('tspan', { x: c.x, dy: -(lines.length * lineHeight) / 2, ...(more.length ? { class: 'space__label-name' } : {}) });
+    first.textContent = title;
+    label.appendChild(first);
+    lines.forEach((line, i) => {
+      const t = el('tspan', { x: c.x, dy: i === 0 ? lineHeight + (more.length ? 0 : 2) : lineHeight, class: 'space__label-name' });
       t.textContent = line;
       label.appendChild(t);
     });

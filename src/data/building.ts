@@ -8,8 +8,10 @@ import * as l2 from './gateway/level2';
 import * as l3 from './gateway/level3';
 import * as l4 from './gateway/level4';
 import * as l5 from './gateway/level5';
+import { DEPARTMENTS, RESERVABLE } from './gateway/departments';
 import { OCCUPANTS } from './gateway/occupants';
 import { hearst } from './gateway/streets';
+import { assignDepartments } from './departments';
 import { assignOccupants } from './occupants';
 import type { Building, Floor, Space } from './types';
 
@@ -18,7 +20,9 @@ import type { Building, Floor, Space } from './types';
  *
  * Every level is generated from the CAD plan-view PDFs by `tools/trace_cad/` (rooms are
  * flood-filled from the plan's room labels, outlines are the exterior walls) and drawn in one
- * shared coordinate frame, so walls and cores line up exactly when switching floors.
+ * shared coordinate frame, so walls and cores line up exactly when switching floors. Who sits
+ * where comes from `gateway/occupants.ts`, and which department a room belongs to from
+ * `gateway/departments.ts` (the colour-shaded space-assignment plans).
  */
 /** What a generated `level*.ts` module exports (`desks` arrived later, so older modules may lack it). */
 type LevelModule = { outline: XY[]; islands: XY[][]; rooms: RoomSpec[]; pois: PoiSpec[]; desks?: XY[][] };
@@ -41,13 +45,17 @@ const floors: Floor[] = levels.map(([id, label, level, l]) => ({
   ...(l.desks?.length ? { desks: l.desks.map(pts) } : {}),
 }));
 
-const { spaces, unmatched } = assignOccupants(
+const occupied = assignOccupants(
   levels.flatMap(([id, , , l]): Space[] => spacesFrom(id, l.rooms)),
   OCCUPANTS,
 );
+const assigned = assignDepartments(occupied.spaces, DEPARTMENTS, RESERVABLE);
+const spaces = assigned.spaces;
 
 /** Directory rooms (see `gateway/occupants.ts`) that match no space on any floor. */
-export const unplacedOccupantRooms: string[] = unmatched;
+export const unplacedOccupantRooms: string[] = occupied.unmatched;
+/** Space ids in `gateway/departments.ts` that match no space on any floor. */
+export const unplacedDepartmentRooms: string[] = assigned.unmatched;
 const pois = levels.flatMap(([id, , , l]) => poisFrom(id, l.pois));
 
 export const building: Building = {

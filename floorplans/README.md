@@ -1,10 +1,12 @@
 # Floorplan references
 
-Inventory of all 26 reference files in this checkout. Paths and spelling match the files on disk.
+Inventory of all 35 reference files in this checkout. Paths and spelling match the files on disk.
 
 Use the October 2025 vector floorplans for wall geometry and alignment. Building-sign photos
 are secondary references for room numbers and broad shape corrections; do not replace precise
 CAD walls with photo distortion. The website PNGs are low-resolution overview references.
+The June 2026 space-assignment sheets carry the same line work with each department's rooms
+shaded in colour; they are the source of the map's department tags.
 
 `lowerlevel-whole-floor.jpeg`, requested in the ticket, is not present in this checkout.
 Lower-level numbering below comes from the teaching-spaces PDF instead; check it against
@@ -34,6 +36,22 @@ that sign when the photo becomes available.
 - [floorplan_floor-4_2025-10-02.pdf](architect-pdfs/floorplans/floorplan_floor-4_2025-10-02.pdf)
 - [floorplan_floor-5_2025-10-02.pdf](architect-pdfs/floorplans/floorplan_floor-5_2025-10-02.pdf)
 - [floorplan_floor-lower-level_2025-10-02.pdf](architect-pdfs/floorplans/floorplan_floor-lower-level_2025-10-02.pdf)
+
+## Space assignment sheets (colour)
+
+"Gateway Space Assignments w/Furniture 6/21/26" from One Workplace: the same six furniture
+plans, each room shaded in its department's colour, with a legend of coloured dots and
+department names on every sheet but the Lower Level's (whose editing room is annotated
+"CDSS AV Team" instead). The six pages are split one per file; the original is kept too.
+`tools/departments/import_departments.py` reads these to tag the map's rooms.
+
+- [Gateway Space Assignments w_Furniture 6_21_26.pdf](architect-pdfs/floorplans/Gateway%20Space%20Assignments%20w_Furniture%206_21_26.pdf) (all six pages)
+- [space-assignments_floor-lower-level_2026-06-21.pdf](architect-pdfs/floorplans/space-assignments_floor-lower-level_2026-06-21.pdf)
+- [space-assignments_floor-1_2026-06-21.pdf](architect-pdfs/floorplans/space-assignments_floor-1_2026-06-21.pdf)
+- [space-assignments_floor-2_2026-06-21.pdf](architect-pdfs/floorplans/space-assignments_floor-2_2026-06-21.pdf)
+- [space-assignments_floor-3_2026-06-21.pdf](architect-pdfs/floorplans/space-assignments_floor-3_2026-06-21.pdf)
+- [space-assignments_floor-4_2026-06-21.pdf](architect-pdfs/floorplans/space-assignments_floor-4_2026-06-21.pdf)
+- [space-assignments_floor-5_2026-06-21.pdf](architect-pdfs/floorplans/space-assignments_floor-5_2026-06-21.pdf)
 
 ## Website overview images
 

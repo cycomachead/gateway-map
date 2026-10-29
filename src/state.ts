@@ -7,6 +7,8 @@ export interface AppState {
   query: string;
   /** Empty set = show everything. */
   categories: Set<SpaceCategory>;
+  /** The side panel lists the rooms of every floor, not just the current one. */
+  allFloors: boolean;
 }
 
 /** Category filters never hide circulation: corridors and stairs stay as landmarks. */

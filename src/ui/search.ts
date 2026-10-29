@@ -7,7 +7,7 @@ export interface SearchHit {
   score: number;
 }
 
-/** Cheap ranked search over name, occupants, id, tags, and description. */
+/** Cheap ranked search over name, occupants, department, id, tags, and description. */
 export function searchSpaces(spaces: Space[], query: string, limit = 8): SearchHit[] {
   const q = query.trim().toLowerCase();
   if (!q) return [];
@@ -20,6 +20,7 @@ export function searchSpaces(spaces: Space[], query: string, limit = 8): SearchH
     const tags = (space.tags ?? []).map((t) => t.toLowerCase());
     const desc = (space.description ?? '').toLowerCase();
     const people = (space.occupants ?? []).map((n) => n.toLowerCase());
+    const dept = (space.department ?? '').toLowerCase();
 
     let score = 0;
     for (const term of terms) {
@@ -29,6 +30,7 @@ export function searchSpaces(spaces: Space[], query: string, limit = 8): SearchH
       else if (name.startsWith(term)) score += 40;
       else if (name.includes(term)) score += 25;
       else if (id.includes(term)) score += 20;
+      else if (dept && dept.split(/[\s,]+/).some((w) => w.startsWith(term))) score += 18;
       else if (tags.some((t) => t.includes(term))) score += 15;
       else if (desc.includes(term)) score += 5;
       else {
@@ -69,8 +71,9 @@ export function mountSearchBox(root: HTMLElement, opts: SearchBoxOptions) {
       li.className = 'search__hit' + (i === active ? ' is-active' : '');
       li.setAttribute('role', 'option');
       const who = occupantNames(hit.space);
+      const sub = [who, hit.space.department].filter(Boolean).join(' · ');
       li.innerHTML =
-        `<span>${esc(hit.space.name)}${who ? `<small class="search__who">${esc(who)}</small>` : ''}</span>` +
+        `<span>${esc(hit.space.name)}${sub ? `<small class="search__who">${esc(sub)}</small>` : ''}</span>` +
         `<small>Floor ${esc(opts.floorLabel(hit.space.floorId))}</small>`;
       li.addEventListener('mousedown', (e) => {
         e.preventDefault(); // keep focus in the input

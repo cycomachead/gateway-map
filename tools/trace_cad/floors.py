@@ -74,15 +74,32 @@ SW_STAIR = ([(575, 1490), (600, 1480), (610, 1520)], None, 'sw-stair', 'circulat
 EAST_STAIR = ('east-stair', 'circulation', 'East Stair', 'Stair', ['stairs'],
               [(2493.7, 1516.0), (2532.2, 1481.8), (2642.0, 1602.4), (2579.0, 1633.0)])
 ATRIUM = (1480, 1230, 'atrium', 'circulation', 'Atrium', 'Atrium', ['atrium', 'stairs', 'open to below'])
-NE_RESTROOMS = [(1375, 850, 'ne-restroom', 'service', 'Restroom (NE)', 'WC', ['restroom']),
-                ([(1250, 880), (1240, 870), (1262, 892)], None, 'ne-restroom-2', 'service', 'Single-Occupancy Restroom (NE)', 'WC', ['restroom', 'all gender'])]
-SW_RESTROOMS = [(1600, 1610, 'sw-restroom', 'service', 'Restroom (SW)', 'WC', ['restroom']),
-                (1670, 1515, 'sw-restroom-2', 'service', 'Single-Occupancy Restroom (SW)', 'WC', ['restroom', 'all gender'])]
+# Restrooms: the plans do not label them (except on the Lower Level). The multi-stall rooms of
+# the Northeast core are the men's and those of the Southwest core the women's; the small
+# single-occupancy rooms beside them are gender neutral. The map draws a pictogram above the
+# label from the tags ('men', 'women', 'all gender'; see emit_ts.ICONS), and a label's lines
+# after the first are wrapped small under it so it fits a small room.
+MENS = ("Men's Restroom", "Men's Restroom", ['restroom', 'men'])
+WOMENS = ("Women's Restroom", "Women's Restroom", ['restroom', 'women'])
+NEUTRAL = ('Gender Neutral Restroom', 'Gender\nNeutral', ['restroom', 'all gender', 'gender neutral'])
+NE_RESTROOMS = [(1375, 850, 'ne-restroom', 'service', *MENS),
+                ([(1250, 880), (1240, 870), (1262, 892)], None, 'ne-restroom-2', 'service', *NEUTRAL)]
+SW_RESTROOMS = [(1600, 1610, 'sw-restroom', 'service', *WOMENS),
+                (1670, 1515, 'sw-restroom-2', 'service', *NEUTRAL)]
 CORES = NE_ELEVATORS + SW_ELEVATORS + [NE_STAIR, SW_STAIR, ATRIUM]
 LL_CORES = (_EL('ne', 'Northeast', [(2406.6, 856.1), (2488.8, 848.9), (2570.9, 841.7)])
             + _EL('sw', 'Southwest', [(2398.4, 1787.8), (2476.8, 1768.0), (2559.7, 1768.0)])
             + [(2295, 875, 'ne-stair', 'circulation', 'Northeast Stair', 'Stair', ['stairs']),
-               (2690, 1935, 'sw-restrooms', 'service', 'Restrooms (SW)', 'WC', ['restroom'])])
+               # the gender inclusive restroom B1309 (its label sits in the upper half, the
+               # lower row of stalls traces as a separate region) and the single-user B1307
+               ([(2749, 1720), (2690, 1935)], None, 'B1309', 'service', 'Gender Inclusive Restroom B1309', 'Gender\nInclusive', ['restroom', 'all gender', 'gender inclusive']),
+               (2846, 1653, 'B1307', 'service', 'Single-User Restroom B1307', 'Single\nUser', ['restroom', 'all gender', 'single user'])])
+# Floor 5's restrooms stand in the south bar: two multi-stall rooms (the western one has the
+# urinals) and, by the elevators, two single-occupancy rooms drawn by hand from their walls.
+F5_RESTROOMS = [(1305, 1700, 'men-restroom', 'service', "Men's Restroom", "Men's\nRestroom", ['restroom', 'men']),
+                (1390, 1690, 'women-restroom', 'service', "Women's Restroom", "Women's\nRestroom", ['restroom', 'women'])]
+F5_SINGLE_RESTROOMS = [('single-restroom-1', 'service', *NEUTRAL, [(1264.0, 1530.0), (1310.0, 1524.5), (1317.0, 1586.0), (1271.5, 1591.5)]),
+                       ('single-restroom-2', 'service', *NEUTRAL, [(1358.0, 1518.6), (1404.0, 1513.0), (1411.2, 1572.8), (1364.5, 1572.1)])]
 
 # Lower-level teaching room numbers: Teaching Spaces PDF, pages 4 and 10.
 # Wall geometry: October 2025 CAD sheet; door swings and furniture are omitted. The storage
@@ -208,8 +225,9 @@ FLOORS = {
               manual=[EAST_STAIR],
               # 1420's label sits on its tables: it is named below
               skip={'1420'},
-              # the plan's "Project Rm." 1456 is the TA printer room
-              rename={'1456': 'TA PRINTER ROOM'},
+              # the plan's "Project Rm." 1456 is the TA printer room; 1110 (an "open office" on
+              # the plan) is a four-walled reservable meeting room like 1110A/B beside it
+              rename={'1456': 'TA PRINTER ROOM', '1110': 'MEETING'},
               # The two lecture halls carry no number on this plan (their tiers split them into
               # stripes) and the drone lab's label sits at its door: drawn by hand. The halls are
               # the red outlines of the Teaching Spaces PDF (1210 on page 21, 1220 on page 18),
@@ -222,6 +240,8 @@ FLOORS = {
                              (3036.7, 1543.3), (2650.0, 1620.0)]},
               # the Southwest wing's stair of the upper floors is the Southwest block's stair here
               named=[n for n in CORES if n is not SW_STAIR] + SW_RESTROOMS + [
+                  # the Northeast core's multi-stall restroom is east of the elevators here
+                  (1640, 840, 'ne-restroom', 'service', *MENS),
                   (575, 1478, 'sw-stair', 'circulation', 'Southwest Stair', 'Stair', ['stairs']),
                   (1261.6, 1700.3, 'cafe', 'amenity', 'Cafe', 'Cafe', ['cafe', 'food']),
                   (1608.3, 1732.7, 'cafe-seating', 'amenity', 'Cafe Seating', 'Seating', ['cafe', 'seating']),
@@ -257,8 +277,9 @@ FLOORS = {
     # bar is sealed so the terrace does not run into the building. The oval is the atrium's
     # skylight.
     '5': dict(pdf='5', label='5', level=5, unnamed=2500, unnamed_max=120000,
-              named=[n for n in CORES if n is not ATRIUM] + [
+              named=[n for n in CORES if n is not ATRIUM] + F5_RESTROOMS + [
                   (1458, 1236, 'skylight', 'circulation', 'Atrium Skylight', 'Skylight', ['atrium', 'skylight'])],
+              manual=F5_SINGLE_RESTROOMS,
               terrace=[(1800, 1300), (800, 1900), (1100, 1350), (1210, 1290), (800, 1250), (1300, 1475), (1200, 960), (1400, 1420), (1700, 1000)],
               extra=[[1310, 1522, 1342, 1515]],
               # 5370's label sits in the corridor below it, and 5310's fill leaks along the
@@ -322,6 +343,8 @@ def category(name: str, id_: str) -> str:
 
 
 TITLE_FIXES = {
+    # every office is just an "Office" on the map (the plan distinguishes faculty offices)
+    'Faculty Office': 'Office',
     'Social Kitchen/Working Lounge': 'Social Kitchen / Working Lounge',
     'Piazza Informal Collab': 'Piazza – Informal Collab',
     'Project Rm.': 'Project Room',
@@ -336,7 +359,7 @@ ACRONYMS = {'It': 'IT', 'Hci': 'HCI', 'Das': 'DAS', 'Mri': 'MRI', 'Ta': 'TA'}
 
 
 def display_name(name: str, id_: str) -> str:
-    """'FACULTY OFFICE' + '3117' -> 'Faculty Office 3117'; 'HUDDLE' -> 'Huddle Room 3189'."""
+    """'FACULTY OFFICE' + '3117' -> 'Office 3117'; 'HUDDLE' -> 'Huddle Room 3189'."""
     import re
     t = re.sub(r'[A-Za-z]+', lambda m: ACRONYMS.get(m.group().capitalize(), m.group().capitalize()), name)
     t = TITLE_FIXES.get(t, t)
