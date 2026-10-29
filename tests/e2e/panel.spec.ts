@@ -80,3 +80,24 @@ test('restrooms are named and carry an icon on every floor', async ({ page }) =>
   // The stalls once drawn as a separate "Restrooms (SW)" sliver are part of B1309 now.
   await expect(page.locator('#map [data-space-id="0-sw-restrooms"]')).toHaveCount(0);
 });
+
+test('the Info button opens INFO.md rendered as a dialog', async ({ page }) => {
+  const info = page.getByRole('dialog', { name: 'Gateway Building Info' });
+  await expect(info).toBeHidden();
+  await page.getByRole('button', { name: 'Info', exact: true }).click();
+  await expect(info).toBeVisible();
+  await expect(info.getByRole('heading', { level: 3 })).toHaveText(['Room Numbers', 'Site Features']);
+  await expect(info).toContainText('Northeast side of the building');
+  await expect(info.locator('kbd', { hasText: '?' })).toBeVisible();
+  await expect(info.locator('li')).toHaveCount(6);
+  await info.getByRole('button', { name: 'Close' }).click();
+  await expect(info).toBeHidden();
+  await expect(page.getByRole('button', { name: 'Info', exact: true })).toBeFocused();
+});
+
+test('the fare gates in front of the Northeast elevators are a named room on Floor 1', async ({ page }) => {
+  await page.locator('#map [data-space-id="1-fare-gates"] .space__shape').click();
+  await expect(page.locator('#panel h2')).toHaveText('🚨 Fare Gates (Turnstiles)');
+  await expect(page).toHaveURL('/floor-1?room=1-fare-gates');
+  await expect(page.locator('#map [data-space-id="1-fare-gates"] .space__label')).toContainText('Fare Gates');
+});

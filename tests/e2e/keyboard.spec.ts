@@ -87,7 +87,7 @@ test('+ and - zoom the map and announce the zoom level', async ({ page }) => {
   await expect(announcer).toHaveText('Zoom 140%');
 });
 
-test('digits and B switch floors and move focus to the floor button', async ({ page }) => {
+test('digits, B and L switch floors and move focus to the floor button', async ({ page }) => {
   await page.keyboard.press('4');
   await expect(page.locator('#map [data-floor-id]')).toHaveAttribute('data-floor-id', '4');
   await expect(page).toHaveURL('/floor-4');
@@ -102,6 +102,9 @@ test('digits and B switch floors and move focus to the floor button', async ({ p
   await expect(page.locator('#map [data-floor-id]')).toHaveAttribute('data-floor-id', '0');
   await page.keyboard.press('2');
   await expect(page.locator('#panel h2')).toHaveText('Floor 2');
+  await page.keyboard.press('l');
+  await expect(page.locator('#map [data-floor-id]')).toHaveAttribute('data-floor-id', '0');
+  await page.keyboard.press('2');
 
   // A selected room is cleared by a floor change, like clicking the floor button.
   await page.locator('[data-space-id="2-2322"] .space__shape').click();
@@ -190,11 +193,11 @@ test('the Shift preference gates single-letter shortcuts and survives a reload',
   const pref = help.getByRole('checkbox', { name: /Require Shift/ });
   await expect(pref).not.toBeChecked();
   const lowerLevelKeys = help.locator('.shortcuts dt').filter({ has: page.locator('kbd', { hasText: 'B' }) });
-  await expect(lowerLevelKeys).toHaveText('B');
+  await expect(lowerLevelKeys).toHaveText('B or L');
   await pref.check();
   await expect(pref).toBeChecked();
   await expect(pref).toBeFocused();
-  await expect(lowerLevelKeys).toHaveText('Shift+B');
+  await expect(lowerLevelKeys).toHaveText('Shift+B or Shift+L');
   await page.keyboard.press('Escape');
 
   await page.keyboard.press('b');

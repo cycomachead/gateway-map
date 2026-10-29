@@ -49,7 +49,7 @@ npm run departments  # re-import department assignments from the colour space-as
 
 Press `?` (or the **?** button in the header) for the full list. In short: `Ctrl`+`/` or
 `Ctrl`+`F` (`⌘` on a Mac) jumps to the search box, `+` and `−` zoom, `1`–`5` and `B` switch
-floors (`B` is the Lower Level), the arrow keys move keyboard focus to the next room in that
+floors (`B` or `L` is the Lower Level), the arrow keys move keyboard focus to the next room in that
 direction and pan to keep it in view, `Enter` opens the focused room, and `Esc` goes back to
 the floor. The shortcuts dialog has a *Require Shift for single-letter shortcuts* preference
 (saved in `localStorage`) for people whose screen reader uses single letters to move around
@@ -57,6 +57,16 @@ the page; with it on, `B` alone does nothing and `Shift`+`B` goes to the Lower L
 shortcut either moves focus to the control it acted on (floor button, search box, room) or
 reports what happened through the polite live region `#announcer`. The **About** button
 credits the author and the language models that helped build the site.
+
+## Info dialog
+
+The **Info** button in the header shows `INFO.md` from the repository root: room-numbering
+conventions, site features, and anything else worth telling a visitor. Edit the file and the
+dialog follows (Vite inlines it at build time). `src/ui/markdown.ts` renders it with a small
+Markdown subset: `#` headings (the first `# Title` becomes the dialog's title, `##` sections
+become its headings), paragraphs, `*`/`-` bullet lists, numbered lists, `---` rules, and the
+inline marks `` `code` ``, `**bold**`, `*italic*` and `[links](url)`. Inline HTML such as
+`<kbd>?</kbd>` passes straight through.
 
 ## Editing the map
 
