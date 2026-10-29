@@ -1,6 +1,8 @@
 # Vector tracer: room shapes from a wall-only drawing
 
-Status: design, 2026-10-29. Replaces the raster tracing in `tools/trace_cad/rooms.py`.
+Status: implemented on branch `cycomachead/vector-tracer/1` (PR #18), 2026-10-29. Replaces the raster
+tracing in `tools/trace_cad/rooms.py`. The *Findings* section records what the implementation
+changed against the plan.
 
 ## Problem
 
@@ -110,3 +112,34 @@ the counts on any floor.
 - Tiered lecture halls stay hand polygons.
 - The emitter still imports OpenCV for a few helpers; the venv includes it until those are
   moved to shapely.
+
+## Findings from the implementation
+
+- **Facades hide as furniture.** The curved facades and glass fronts are chains of short
+  pieces a few hundred points long; the extractor's furniture rule (a multi-piece path of
+  furniture size) dropped them, so every curved-wall room leaked. `extract.py` now exports
+  every chained polyline and `walls.py` keeps the gently turning open ones (`CHAIN_TURN`).
+- **Columns matter more than doors.** Painting the column circles as discs took floor 3 from
+  48 to 116 enclosed rooms; closing both chords of every door swing added another 8.
+- **The level files are inset.** Growing faces back to the stroke centres lowered parity:
+  the committed polygons sit at the face boundary (`GROW = 0`).
+- **Hatched cores come in cells.** Elevator shafts, stairs and restrooms are chopped by their
+  hatching into faces below room size; cells under four times the floor's minimum room are
+  merged across one stroke into regions, which the `named` seeds then find.
+- **Shapes: rectangle first.** A minimum rectangle is the exact answer for most rooms. It is
+  kept when it covers the face but for slivers and fills nothing bigger than a notch
+  (`SLIVER_MAX`, `NOTCH_MAX`); otherwise four lines fitted through the outermost boundary
+  points of each side; otherwise the opened, simplified face. Fitting four lines everywhere
+  was *worse* than the rectangle on a third of the rooms (a point or two of bias per wall).
+  Rooms in the floor's `quad` list get fitted walls with an arc where the boundary bows away
+  on a circle (the social kitchen).
+- **Arcs are checked.** `arcify` can read a run of notch edges as a curve; an arced polygon
+  is only kept when it still traces the face (IoU ≥ 0.985, within 2 pt).
+- **Patches are seeded, not written.** `bootstrap_patches.py` takes the open-plan areas,
+  piazzas, porches and booths from the committed level files, and seals the edges of rooms
+  that leaked or shared a face. Sealing every room that merely differed added false walls
+  (door-swing areas), so it is limited to those two cases.
+- **Known differences from the level files** (the trace is right or the question is open):
+  3346's committed polygon is an axis-aligned square the sheet does not show; 3112's label
+  stands in the small room beside the one the level file calls 3112; 2111 is split by a thin
+  desk panel drawn from wall to door; 3111's desk return pocket.
