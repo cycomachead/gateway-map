@@ -33,3 +33,31 @@ tagged with the department whose shading covers at least half of it; rooms cover
 substantially by two colours (an open office shared by two groups), are listed on stdout for
 review. Unnumbered rooms and circulation are skipped. The sheets' line work is identical to the
 traced plans, so they add nothing to the wall geometry.
+
+## Names in offices (`import_names.py`)
+
+The same sheets carry a layer of annotations in Helvetica (the plan's own labels are Arial):
+a person's name written across their office, sometimes with a role ("CS Division Chair"), a
+note ("+1", "Proposed new hire", "Search #3113") or several people separated by commas,
+slashes or line breaks, and desk numbers in the open offices. `import_names.py` lays every
+annotation line over the map's rooms with the same registration, gathers the lines written
+over each office into stacked blocks (the text is rotated with the building, so reading order
+follows the text's own direction), and splits each block into names: pieces of one to four
+capitalised words with no role or note word and no room number. A role on its own line beside
+a name ("Stat Chair" under "Steve Evans") drops just that line; a role before a name on one
+line ("Initiatives  Adrian Hill") keeps the name. Roles, groups ("PhD/Postdoc", "Masters
+Students STAT"), searches and desk numbers are dropped.
+
+```sh
+npm run names                                          # rewrite sheet_occupants.ts
+python3 tools/departments/import_names.py <pdf dir> <out.ts>
+```
+
+It writes `src/data/gateway/sheet_occupants.ts` (plan room number → names, spelled as the
+sheets spell them), which `building.ts` merges under the EECS directory's `occupants.ts`: the
+directory's names come first and a sheet name is added only when it names nobody already
+there (allowing a missing hyphen, a one-letter typo, "Venkat" for "Venkatesan"). Everything
+dropped from an office, and every annotation in a room that is not an office (the PI names on
+the labs, the hoteling huddle rooms, the Dean's suite's conference room), is printed for
+review; surnames written alone ("Tangherlini", "Nielsen / Huelsenbeck") are kept as the
+sheet gives them.
