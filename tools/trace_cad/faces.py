@@ -23,8 +23,10 @@ from shapely.ops import unary_union
 from shapely.strtree import STRtree
 
 from floors import FLOORS, category
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'departments'))
+from levels import flatten  # noqa: E402  (bulged polygons back to vertices)
 from patches import load_patches
-from walls import BORDER, scale_of
+from walls import BORDER, fit_circle, scale_of
 
 warnings.filterwarnings('ignore', category=RuntimeWarning, module='shapely')  # degenerate envelopes of slivers
 
@@ -35,7 +37,21 @@ MIN_LABEL_FACE = 300  # pt²; a label is never given to a smaller face
 MAX_ROOM = 150000  # pt²; anything bigger is the corridor network
 LABEL_REACH = 8.0  # pt; a label on a wall line is given to the nearest face this close
 SIMPLIFY = 0.5     # pt; vertex tolerance after growing the face back to the wall faces
+OPEN = 2.5         # pt; notches narrower than twice this (strokes against a wall) are dropped from a room's shape
+POCKET_MIN = 150.0 # pt²; a piece of the room this big behind a narrow neck (a desk against the wall) is kept
 QUAD_IOU = 0.9     # a rectangle covering a room this well replaces its shape
+ARC_TOL = 1.0      # pt; a run of short edges within this of a circle becomes one arc
+ARC_DEV = 2.0      # pt; arcs that stray further from the traced shape are discarded
+SLIVER_MAX = 60.0  # pt²; a four-wall fit must cover the shape but for slivers this small
+POCKET_MAX = 1000.0  # pt²; an unlabelled face this small touching one room only is furniture standing in it
+NOTCH_MAX = 400.0  # pt²; ... and may fill notches up to this (a credenza, a column's bite); a bowed wall leaves far more
+NOTCH_SHARE = 0.25 # or up to this share of the room (a desk drawn against the wall of a small office)
+NOTCH_TOTAL = 0.3  # all notches together at most this share of the room
+FIT_OUTLIER = 3.0  # pt; boundary points further from a fitted wall are dropped once (a notch)
+CORNER_ZONE = 5.0  # pt; boundary points this close to a rectangle corner (rounded by the opening) fit no wall
+CURVE_SAG = 3.0    # pt; a wall along which the drawing's curves bow further than this is an arc
+BOW_REACH = 30.0   # pt; boundary points this far from a fitted wall may be that wall bowing
+BOW_RES = 3.5      # pt; the boundary must lie this close to one circle for the wall to be an arc
 EXIT_DIST = 25.0   # pt; a door hinge this close to the outline is an entrance
 CELL_MAX = 4.0     # x the floor's minimum room: smaller unlabelled faces are cells of a hatched core, merged across strokes
 CELL_GAP = 0.6     # pt; extra reach when joining cells (a stroke is 3 pt wide, cells meet across it)
@@ -93,10 +109,6 @@ def biggest(g):
     return g
 
 
-def ring(poly):
-    return [[round(float(x), 1), round(float(y), 1)] for x, y in poly.exterior.coords[:-1]]
-
-
 def iou(a, b):
     u = a.union(b).area
     return a.intersection(b).area / u if u else 0.0
@@ -129,22 +141,271 @@ def merge_collinear(poly, deg=2.0):
     return Polygon(out) if len(out) >= 3 else poly
 
 
-def shape(face, scale, quad=False, boxed=False):
-    """A room's polygon from its face: grown back to the wall faces, simplified, collinear
-    runs merged; the minimum rectangle when it covers the room well (or is forced)."""
-    g = biggest(face.buffer(GROW * scale, join_style='mitre', mitre_limit=3.0)) if GROW else face
+def shape(face, scale, quad=False, boxed=False, arcs=True):
+    """A room's polygon from its face, as vertices: grown back to the wall faces, simplified,
+    collinear runs merged; the minimum rectangle when it covers the room well (or is forced);
+    otherwise curved runs (a facade, a bay) collapsed into arcs, as bulge values."""
+    fitted = fit(face, scale, quad, boxed)
+    return fitted if isinstance(fitted, list) else ring(fitted, arcs)
+
+
+def ring(poly, arcs=False):
+    pts = [[round(float(x), 1), round(float(y), 1)] for x, y in poly.exterior.coords[:-1]]
+    if arcs and len(pts) >= 8:
+        from rooms import arcify
+        arced = arcify(pts, tol=ARC_TOL)
+        # keep the arcs only when they still trace the shape (a run of notch edges can be
+        # mistaken for a curve and come back as a bulge that is not there)
+        back = Polygon(flatten(arced)).buffer(0)
+        if not back.is_empty and iou(back, poly) >= 0.985 and back.hausdorff_distance(poly) <= ARC_DEV:
+            pts = arced
+    return pts
+
+
+def fit(face, scale, quad=False, boxed=False):
+    # a round opening drops the notches narrower than 2 x OPEN: a cabinet or bench drawn
+    # against a wall, the door leaf's closure chord, a column's bite
+    # ... but a pocket behind a desk that connects through a narrow neck is still the room:
+    # the pieces the opening keeps are grown back over the face, so only the thin parts go
+    opened = face.buffer(-OPEN * scale).buffer(OPEN * scale)
+    pieces = [p for p in (opened.geoms if isinstance(opened, MultiPolygon) else [opened]) if p.area >= POCKET_MIN * scale * scale]
+    if pieces:
+        kept = unary_union(pieces)
+        # the thin parts the opening removed: a neck joining two kept pieces (the gap between
+        # a desk and the wall) comes back, a spike touching one piece (a stroke) does not
+        thin = face.difference(kept.buffer(0.01))
+        necks = [t for t in (thin.geoms if hasattr(thin, 'geoms') else [thin])
+                 if not t.is_empty and sum(t.distance(p) < 0.1 for p in pieces) >= 2]
+        g = biggest(unary_union([kept] + necks).buffer(0.05).buffer(-0.05))
+        g = biggest(face.intersection(g.buffer(OPEN * scale + 0.6)))
+        g = biggest(g.buffer(-1.0 * scale).buffer(1.0 * scale))
+    else:
+        g = face
+    if g.is_empty or g.area < 0.5 * face.area:
+        g = face
+    if GROW:
+        g = biggest(g.buffer(GROW * scale, join_style='mitre', mitre_limit=3.0))
     g = valid(merge_collinear(biggest(g.simplify(SIMPLIFY * scale))), face)
     if g.area <= 0 or len(g.exterior.coords) < 4:
         return face
+    # most rooms have four walls, not always at right angles: four lines fitted through the
+    # boundary replace a notched or many-cornered shape when they still cover the room and
+    # fill nothing bigger than a notch (a credenza against the wall, a column's bite). A
+    # bowed wall (a curved facade, the kitchen's bay) leaves far more outside and keeps its
+    # traced curve.
     rect = g.minimum_rotated_rectangle
-    if rect.area > 0 and (boxed or (quad and iou(rect, g) >= 0.75) or iou(rect, g) >= QUAD_IOU):
+    if boxed:
+        return rect if rect.area > 0 else g
+    def fits(cand):
+        if cand is None or cand.area <= 0:
+            return False
+        covers = largest_piece(g.difference(cand)) <= SLIVER_MAX * scale * scale
+        filled = cand.difference(g)
+        fills = largest_piece(filled) <= max(NOTCH_MAX * scale * scale, NOTCH_SHARE * g.area) and filled.area <= NOTCH_TOTAL * g.area
+        return covers and fills
+    # the rectangle first (it is the exact answer for most rooms), four fitted walls for the
+    # rooms whose walls are not at right angles
+    if fits(rect):
         return rect
+    four = four_walls(g, scale)
+    if fits(four):
+        return four
+    if quad and four is not None:  # four walls by the floor config: one of them may bow
+        return bowed_walls(four, g, scale)
     # the simplest polygon that still is the room: coarser tolerances while the shape holds
     for tol in (1.0, 2.0, 3.0, 4.0):
         s = valid(biggest(g.simplify(tol * scale)), g)
         if iou(s, g) >= 0.97 and len(s.exterior.coords) < len(g.exterior.coords):
             g = s
     return g
+
+
+POCKETS_TAKEN = set()  # ids of faces absorbed into a room as furniture pockets
+
+
+def absorb_pockets(faces, owners, tree, ext_ids, scale, max_room):
+    """{owner key: room face grown over its pockets}. A pocket is an unlabelled face below
+    POCKET_MAX that touches (across a stroke) one labelled room and no other face of room
+    size: the inside of a desk, a cabinet, a bench drawn against the wall."""
+    # a pocket touches its room across a single stroke (3 pt painted); a wall is two strokes
+    # and wider, so neighbours across a wall do not count
+    reach = 2 * BUF * scale + 0.3
+    labelled = {id(f): key for key, (f, _) in owners.items()}
+    out = {}
+    for f in faces:
+        if id(f) in labelled or id(f) in ext_ids or f.area > POCKET_MAX * scale * scale:
+            continue
+        zone = f.buffer(reach)
+        touching = [faces[i] for i in tree.query(zone) if faces[i] is not f and faces[i].intersects(zone)]
+        rooms_touched = {labelled[id(t)] for t in touching if id(t) in labelled}
+        big_touched = [t for t in touching if id(t) not in labelled and (t.area >= POCKET_MAX * scale * scale or id(t) in ext_ids)]
+        if len(rooms_touched) != 1 or big_touched:
+            continue
+        key = rooms_touched.pop()
+        out.setdefault(key, []).append(f)
+        POCKETS_TAKEN.add(id(f))
+    grown = {}
+    for key, pockets in out.items():
+        f = owners[key][0]
+        g = unary_union([f.buffer(reach / 2 + 0.1)] + [p.buffer(reach / 2 + 0.1) for p in pockets]).buffer(-(reach / 2 + 0.1))
+        g = biggest(g)
+        grown[key] = Polygon(g.exterior) if not g.is_empty and g.area > f.area else f
+    return grown
+
+
+def largest_piece(g):
+    """Area of the largest connected piece of a geometry."""
+    if g.is_empty:
+        return 0.0
+    return max(p.area for p in (g.geoms if hasattr(g, 'geoms') else [g]))
+
+
+def four_walls(g, scale):
+    """Four walls fitted to the shape: boundary points are assigned to the nearest side of the
+    minimum rectangle, a line is fitted through each side's points (outliers, such as a notch,
+    dropped once), and the corners are the intersections of neighbouring lines. None when a
+    side has too few points or two lines run parallel."""
+    rect = g.minimum_rotated_rectangle
+    if rect.area <= 0 or len(rect.exterior.coords) != 5:
+        return None
+    R = np.array(rect.exterior.coords[:-1], float)
+    sides = [LineString([R[i], R[(i + 1) % 4]]) for i in range(4)]
+    boundary = g.exterior
+    ts = np.arange(0, boundary.length, 2.0 * scale)
+    P = np.array([boundary.interpolate(t).coords[0] for t in ts])
+    if len(P) < 12:
+        return None
+    which = np.argmin([[side.distance(Point(p)) for side in sides] for p in P], axis=1)
+    # the opening rounded the corners: points near a rectangle corner belong to no wall
+    near_corner = np.array([min(math.dist(p, c) for c in R) <= CORNER_ZONE * scale for p in P])
+    centre = np.array(g.centroid.coords[0])
+    lines = []
+    for k in range(4):
+        Q = P[(which == k) & ~near_corner]
+        if len(Q) < 3:
+            return None
+        # the wall is the outermost run of points: anything standing well inside the fitted
+        # line (a credenza, a bench, the door leaf) is dropped and the line fitted again
+        for _ in range(3):
+            c = Q.mean(0)
+            u = np.linalg.svd(Q - c)[2][0]
+            nrm = np.array([-u[1], u[0]])
+            if np.dot(nrm, c - centre) < 0:
+                nrm = -nrm  # pointing out of the room
+            depth = (Q - c) @ nrm
+            keep = depth >= -FIT_OUTLIER * scale
+            if keep.sum() < 3 or keep.all():
+                break
+            Q = Q[keep]
+        lines.append((c, u))
+    out = []
+    for k in range(4):
+        (c1, u1), (c2, u2) = lines[k - 1], lines[k]
+        A = np.array([u1, -u2]).T
+        if abs(np.linalg.det(A)) < 1e-3:
+            return None
+        t = np.linalg.solve(A, c2 - c1)
+        out.append(c1 + u1 * t[0])
+    q = Polygon(out)
+    return q if q.is_valid and q.area > 0 else None
+
+
+def bowed_walls(four, g, scale):
+    """A four-walled polygon whose walls take an arc where the traced boundary lies on a
+    circle that bows away from the straight wall (the social kitchen's bay). Furniture
+    standing against the wall pushes boundary points into the room; those are dropped from
+    the circle fit. The corners of a bowed wall move onto its circle along the neighbouring
+    walls; the result is a polygon as vertices, with a bulge on each bowed wall."""
+    corners = [np.array(p, float) for p in four.exterior.coords[:-1]]
+    centroid = np.array(g.centroid.coords[0])
+    boundary = g.exterior
+    ts = np.arange(0, boundary.length, 2.0 * scale)
+    P = np.array([boundary.interpolate(t).coords[0] for t in ts])
+    chords = [LineString([corners[i], corners[(i + 1) % 4]]) for i in range(4)]
+    nearest = np.argmin([[ch.distance(Point(p)) for ch in chords] for p in P], axis=1)
+    arcs = {}
+    for i in range(4):
+        a, b = corners[i], corners[(i + 1) % 4]
+        d = b - a
+        L = np.linalg.norm(d)
+        if L < 1e-6:
+            continue
+        u, nrm = d / L, np.array([-d[1], d[0]]) / L
+        along = (P - a) @ u
+        sag = (P - a) @ nrm
+        on = (nearest == i) & (along > 0.05 * L) & (along < 0.95 * L) & (np.abs(sag) <= min(0.2 * L, BOW_REACH * scale))
+        Q = P[on]
+        if len(Q) < 10:
+            continue
+        ok = None
+        for _ in range(4):
+            (cx, cy), r, res = fit_circle(Q)
+            if r < L / 2 or r > 20 * L:
+                break
+            radial = np.hypot(Q[:, 0] - cx, Q[:, 1] - cy) - r
+            room_side = np.sign(np.hypot(*(centroid - [cx, cy])) - r) or 1.0
+            inward = radial * room_side > FIT_OUTLIER * scale  # standing in the room, off the wall
+            if not inward.any():
+                ok = ((cx, cy), r, res, Q)
+                break
+            if (~inward).sum() < 10:
+                break
+            Q = Q[~inward]
+        if ok is None:
+            continue
+        (cx, cy), r, res, Q = ok
+        span = (Q @ u).max() - (Q @ u).min()
+        if res > BOW_RES * scale or span < 0.6 * L:
+            continue
+        sagitta = r - math.sqrt(max(r * r - L * L / 4, 0))
+        if sagitta < CURVE_SAG * scale:
+            continue
+        arcs[i] = ((cx, cy), r)
+    if not arcs:
+        return [[round(float(x), 1), round(float(y), 1)] for x, y in corners]
+    # corners next to an arc slide along the straight neighbour onto the circle
+    moved = list(corners)
+    for i, ((cx, cy), r) in arcs.items():
+        for j, k in ((i, (i - 1) % 4), ((i + 1) % 4, (i + 1) % 4)):  # corner index, straight wall index
+            if k in arcs:
+                continue
+            c = corners[j]
+            far = corners[k] if k != j else corners[(k + 1) % 4]  # the far end of the straight wall
+            v = c - far
+            n = np.linalg.norm(v)
+            if n < 1e-6:
+                continue
+            v /= n
+            oc = far - np.array([cx, cy])
+            bq = 2 * np.dot(oc, v)
+            cq = np.dot(oc, oc) - r * r
+            disc = bq * bq - 4 * cq
+            if disc < 0:
+                continue
+            roots = [(-bq + sq) / 2 for sq in (math.sqrt(disc), -math.sqrt(disc))]
+            t = min(roots, key=lambda t: abs(t - n))
+            if abs(t - n) <= 0.5 * n:
+                moved[j] = far + v * t
+    out = []
+    for i in range(4):
+        x, y = moved[i]
+        if i in arcs:
+            (cx, cy), r = arcs[i]
+            a, b = moved[i], moved[(i + 1) % 4]
+            L = np.linalg.norm(b - a)
+            theta = 2 * math.asin(min(1.0, L / (2 * r)))
+            bulge = math.tan(theta / 4)
+            # the map bows a positive bulge to the right of travel (y down): the sign that puts
+            # the arc's midpoint on the far side from the circle's centre
+            d = b - a
+            nrm = np.array([-d[1], d[0]]) / (L or 1.0)
+            mid = (a + b) / 2
+            towards_centre = np.dot(nrm, np.array([cx, cy]) - mid)
+            bulge = bulge if towards_centre < 0 else -bulge
+            out.append([round(float(x), 1), round(float(y), 1), round(float(bulge), 4)])
+        else:
+            out.append([round(float(x), 1), round(float(y), 1)])
+    return out
 
 
 def atrium_polygon(cfg, n=48):
@@ -217,6 +478,13 @@ def build(fid, workdir):
             open_labels.append((lab, f))
         else:
             owners.setdefault(id(f), (f, []))[1].append(lab)
+    # a desk or cabinet drawn against a wall encloses a pocket of its own: a small face that
+    # touches exactly one room (and nothing else of room size) is part of that room
+    pockets = absorb_pockets(faces, owners, tree, ext_ids, scale, max_room)
+    for key in list(owners):
+        f, labs = owners[key]
+        if key in pockets:
+            owners[key] = (pockets[key], labs)
     for f, labs in owners.values():
         if len(labs) == 1:
             parts = [f]
@@ -229,14 +497,14 @@ def build(fid, workdir):
             parts = [next(p for p in parts if p.contains(Point(l['x'], l['y'])) or p.distance(Point(l['x'], l['y'])) < 1) for l in labs]
         for lab, part in zip(labs, parts):
             rid = lab['id']
-            g = shape(part, scale, quad=rid in cfg['quad'], boxed=rid in cfg['box'])
-            room = {'id': rid, 'name': lab['name'], 'kind': 'room', 'area': int(part.area), 'polygon': ring(g)}
+            room = {'id': rid, 'name': lab['name'], 'kind': 'room', 'area': int(part.area),
+                    'polygon': shape(part, scale, quad=rid in cfg['quad'], boxed=rid in cfg['box'])}
             if len(labs) > 1:
                 room['shared'] = [l['id'] for l in labs if l is not lab]
             rooms.append(room)
     for r in rooms:
         if r.get('hand'):
-            r['area'] = int(Polygon(r['polygon']).area)
+            r['area'] = int(Polygon(flatten(r['polygon'])).area)
             del r['hand']
     # patch areas: the polygon clipped to the free space of the label's face (an open office
     # in the corridor network, a booth whose label stands outside its open front), minus the
@@ -245,7 +513,8 @@ def build(fid, workdir):
     for lab, f in patched:
         rid = lab['id']
         kind = 'open' if category(lab['name'], rid) in OPEN_KINDS else 'room'
-        g = Polygon(patches['areas'][rid]).buffer(0)
+        drawn = patches['areas'][rid]
+        g = Polygon(flatten(drawn)).buffer(0)
         if kind == 'open':  # an open-plan area stops at the walls and at the rooms standing in it
             g = g.intersection(inside.buffer(BUF * scale, join_style='mitre'))
         g = biggest(g.difference(placed))
@@ -255,7 +524,7 @@ def build(fid, workdir):
         # a traced room reaching over the area (a lab box whose open side faces a workspace)
         # gives the area up: it becomes a hole in, or a bite out of, that room
         for r in rooms:
-            rg = Polygon(r['polygon'], r.get('holes', [])).buffer(0)
+            rg = Polygon(flatten(r['polygon']), [flatten(h) for h in r.get('holes', [])]).buffer(0)
             if rg.intersects(g) and rg.intersection(g).area > 0.5 * g.area:
                 cut = biggest(rg.difference(g))
                 r['polygon'] = ring(cut)
@@ -264,9 +533,11 @@ def build(fid, workdir):
                     r['holes'] = holes
                 elif 'holes' in r:
                     del r['holes']
-        room = {'id': rid, 'name': lab['name'], 'kind': kind, 'area': int(g.area), 'polygon': ring(g)}
+        # a room drawn by hand keeps its vertices (and arcs) as given; an open area takes the clip
+        poly = [list(pt) for pt in drawn] if kind == 'room' and g.area >= 0.95 * Polygon(flatten(drawn)).area else ring(g)
+        room = {'id': rid, 'name': lab['name'], 'kind': kind, 'area': int(g.area), 'polygon': poly}
         holes = [[[round(float(x), 1), round(float(y), 1)] for x, y in h.coords[:-1]] for h in g.interiors if Polygon(h).area >= 20]
-        if holes:
+        if holes and kind == 'open':
             room['holes'] = holes
         rooms.append(room)
         placed = placed.union(g)
@@ -277,13 +548,13 @@ def build(fid, workdir):
     building = box(*BORDER).difference(outside)
     pieces = sorted((list(building.geoms) if isinstance(building, MultiPolygon) else [building]), key=lambda p: -p.area)
     # a piece of the building holds rooms; the legend box and the north arrow do not
-    room_points = [Point(Polygon(r['polygon']).representative_point()) for r in rooms if len(r['polygon']) >= 3]
+    room_points = [Point(Polygon(flatten(r['polygon'])).representative_point()) for r in rooms if len(r['polygon']) >= 3]
     pieces = [p for p in pieces if p.area >= max_room / 10 and any(p.contains(q) for q in room_points)]
-    outlines = [ring(merge_collinear(biggest(Polygon(p.exterior).simplify(1.0 * scale)))) for p in pieces]
+    outlines = [ring(merge_collinear(biggest(Polygon(p.exterior).simplify(1.0 * scale))), arcs=True) for p in pieces]
     # faces nobody labelled: cores, restrooms, stairs, closets, for floors.py's `named` list
     labelled = set(owners)
     min_room = cfg.get('min_room', 600) * scale * scale
-    spare = [f for f in faces if id(f) not in labelled and id(f) not in ext_ids and f.area <= max_room
+    spare = [f for f in faces if id(f) not in labelled and id(f) not in ext_ids and id(f) not in POCKETS_TAKEN and f.area <= max_room
              and not any(f.contains(Point(l['x'], l['y'])) for l, _ in open_labels + patched)]
     # Hatched floors, stair treads, elevator X marks and stall partitions chop a core into
     # cells: cells below room size that touch across a stroke are merged back into one region.
@@ -299,9 +570,8 @@ def build(fid, workdir):
     for f in [f for f in spare if f.area >= min_room * CELL_MAX] + merged:
         if f.area < min_room:
             continue
-        g = shape(f, scale)
         c = f.representative_point()
-        unl.append({'area': int(f.area), 'x': round(c.x, 1), 'y': round(c.y, 1), 'polygon': ring(g)})
+        unl.append({'area': int(f.area), 'x': round(c.x, 1), 'y': round(c.y, 1), 'polygon': shape(f, scale)})
     ell = atrium_polygon(cfg)
     if ell is not None:
         c = ell.centroid

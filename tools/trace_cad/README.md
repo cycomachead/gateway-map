@@ -40,8 +40,9 @@ python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
 Per floor, `gen2.py` runs:
 
 1. `extract.py` (cached in `<pdf>_geom.json`).
-2. `walls.py` — the wall strokes (black, unfilled, not furniture, at least 0.5 pt), the
-   structural columns (circles of column size whose rim meets a wall, kept as discs) and both
+2. `walls.py` — the wall strokes (black, unfilled, not furniture, at least 0.5 pt) plus the
+   gently turning open polylines (the curved facades and glass fronts, which the extractor's
+   furniture rule would hide), the structural columns (circles of column size whose rim meets a wall, kept as discs) and both
    chords of every door swing (one closes the doorway, the other lies along the open leaf).
    Writes `<pdf>_walls.json` and `<pdf>_walls.pdf`, the simplified drawing: walls black,
    columns blue, door closures red, patch lines green, labels grey. Open it to read the
@@ -62,7 +63,9 @@ front) and `areas` are polygons for rooms the walls do not enclose (open offices
 porches, phone booths). `bootstrap_patches.py <workdir> <floor> --write` seeds them from
 the committed level file: areas for the open-plan rooms and booths, seal lines where an
 enclosed room's level polygon crosses free space. `preview.py <workdir> <floor> <out.png>`
-draws the trace over the simplified drawing, coloured by parity with the level file.
+draws the trace over the simplified drawing, coloured by parity with the level file, and
+`difflevels.py <emitted dir>` diffs freshly emitted level modules against the committed ones
+(emit into a directory holding a copy of `frame.ts` so both share the frame).
 
 ## How it works
 

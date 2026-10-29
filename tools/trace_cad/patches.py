@@ -8,7 +8,9 @@ points, read off the simplified drawing (`<pdf>_walls.pdf`):
 
 `lines` are walls the sheet does not draw (a doorway without a swing, a gap at a glass
 front). `areas` are the open-plan rooms, whose label sits in the corridor network; the
-polygon is clipped to the free space when the rooms are built. Missing file: no patches.
+polygon is clipped to the free space when the rooms are built. A room that is not open-plan
+(a booth, a room the walls do not trace well) is drawn exactly as given, bulges included.
+Missing file: no patches.
 """
 import json
 import os
@@ -33,5 +35,6 @@ def load_patches(fid):
         if len(ln) < 4:
             raise SystemExit(f'{path}: a line needs x0, y0, x1, y1: {ln}')
         lines.append([float(v) for v in ln[:4]] + [str(ln[4]) if len(ln) > 4 else ''])
-    areas = {str(k): [[float(x), float(y)] for x, y in v] for k, v in data.get('areas', {}).items()}
+    # a vertex may carry a third value, the bulge of the edge starting there (an arc)
+    areas = {str(k): [[float(c) for c in pt] for pt in v] for k, v in data.get('areas', {}).items()}
     return {'lines': lines, 'areas': areas}

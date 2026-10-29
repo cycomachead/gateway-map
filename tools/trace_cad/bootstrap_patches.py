@@ -64,13 +64,16 @@ def propose(workdir, fid):
         poly = Polygon([to_sheet(x, y) for x, y in flatten(r['polygon'])]).buffer(0)
         if poly.is_empty:
             continue
+        # the level polygon in sheet points, arcs kept (a bulge survives a similarity)
+        drawn = [[round(v, 1) for v in to_sheet(pt[0], pt[1])] + ([round(pt[2], 4)] if len(pt) > 2 and pt[2] else []) for pt in r['polygon']]
         # open-plan areas, pods (a booth's walls are furniture-thick and its front open) and
         # rooms whose label stands outside them are drawn by their level polygon
         label_outside = rid in label_at and not poly.buffer(2).contains(label_at[rid])
         name = (r['extra'].get('name') or '').upper()
-        if r['category'] in OPEN_CATEGORIES or 'BOOTH' in name or (r['extra'].get('tags') and 'open plan' in r['extra']['tags']) or label_outside:
+        # ... and rooms the floor config lists as `quad` whose walls bow (the social kitchen)
+        if r['category'] in OPEN_CATEGORIES or 'BOOTH' in name or (r['extra'].get('tags') and 'open plan' in r['extra']['tags']) or label_outside or rid in cfg['quad']:
             if rid not in patches['areas']:
-                areas[rid] = [[round(x, 1), round(y, 1)] for x, y in poly.exterior.coords[:-1]]
+                areas[rid] = drawn if (rid in cfg['quad'] or 'BOOTH' in name or label_outside) else [[round(x, 1), round(y, 1)] for x, y in poly.exterior.coords[:-1]]
             continue
         # an enclosed room that leaked, or shares its face with a neighbour: the edges of its
         # level polygon that run through free space are the gaps to seal. A room traced on

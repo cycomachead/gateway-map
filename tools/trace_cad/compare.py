@@ -58,7 +58,7 @@ def report(workdir, fid, show_all=False):
         if t is None:
             rows.append((rid, r['category'], 'missing', None))
             continue
-        g = Polygon(t['polygon'], [h for h in t.get('holes', [])]).buffer(0)
+        g = Polygon(flatten(t['polygon']), [flatten(h) for h in t.get('holes', [])]).buffer(0)
         u = g.union(ref).area
         rows.append((rid, r['category'], t['kind'], g.intersection(ref).area / u if u else 0.0))
     scored = [x for x in rows if x[3] is not None]

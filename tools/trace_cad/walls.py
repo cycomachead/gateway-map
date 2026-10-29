@@ -74,7 +74,7 @@ def gentle_chains(geom, scale):
     chains of short pieces that the extractor's furniture rule (a multi-piece path of
     furniture size) would otherwise hide. Chairs and fixtures turn sharply or close; door
     swings are circles of door radius and are left to `door_arcs`."""
-    out = []
+    out, kept = [], []
     lo, hi = DOOR_R[0] * scale, DOOR_R[1] * scale
     for pts in geom.get('chains', []):
         if len(pts) < 4 or math.dist(pts[0], pts[-1]) < 2.0 * scale:
@@ -96,7 +96,8 @@ def gentle_chains(geom, scale):
         if lo <= r <= hi and res <= DOOR_RES * scale:
             continue
         out.extend([[pts[i][0], pts[i][1], pts[i + 1][0], pts[i + 1][1]] for i in range(len(pts) - 1)])
-    return out
+        kept.append([[round(x, 2), round(y, 2)] for x, y in pts])
+    return out, kept
 
 
 def circles(geom):
@@ -184,7 +185,8 @@ def build(fid, workdir):
     geom = json.load(open(os.path.join(workdir, f"{cfg['pdf']}_geom.json")))
     scale = scale_of(cfg)
     patches = load_patches(fid)
-    walls = wall_strokes(geom, scale) + gentle_chains(geom, scale)
+    chain_segs, chains = gentle_chains(geom, scale)
+    walls = wall_strokes(geom, scale) + chain_segs
     cols = column_discs(geom, walls, scale)
     doors = door_arcs(geom, scale)
     closures = closures_of(doors)

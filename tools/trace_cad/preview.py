@@ -15,6 +15,8 @@ from PIL import Image, ImageDraw
 from shapely.geometry import Polygon
 
 from compare import report
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'departments'))
+from levels import flatten  # noqa: E402
 from floors import FLOORS
 
 
@@ -29,16 +31,16 @@ def render(workdir, fid, out, scale=0.5):
     dr = ImageDraw.Draw(im)
     S = lambda pts: [(x * scale, y * scale) for x, y in pts]
     for u in rooms['unlabelled']:
-        dr.polygon(S(u['polygon']), fill=(225, 225, 225))
+        dr.polygon(S(flatten(u['polygon'])), fill=(225, 225, 225))
     for r in rooms['rooms']:
         row = rows.get(r['id'])
         v = row[3] if row else None
         col = (190, 215, 245) if v is None else (180, 240, 180) if v >= 0.9 else (250, 230, 150) if v >= 0.8 else (250, 170, 170)
-        dr.polygon(S(r['polygon']), fill=col)
+        dr.polygon(S(flatten(r['polygon'])), fill=col)
         for h in r.get('holes', []):
-            dr.polygon(S(h), fill='white')
+            dr.polygon(S(flatten(h)), fill='white')
     for o in rooms['outlines']:
-        dr.polygon(S(o), outline=(90, 90, 90))
+        dr.polygon(S(flatten(o)), outline=(90, 90, 90))
     for a, b, c, d in w['walls']:
         dr.line([(a * scale, b * scale), (c * scale, d * scale)], fill=(0, 0, 0))
     for a, b, c, d in w['closures']:
