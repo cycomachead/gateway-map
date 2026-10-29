@@ -61,8 +61,8 @@ def render(workdir, fid, out, scale=0.5):
             pts = [to_sheet(x, y) for x, y in flatten(r['polygon'])]
             dr.polygon(S(pts), outline=(200, 0, 200), width=2)
     # crop to the plan
-    xs = [x for o in rooms['outlines'] for x, _ in o]
-    ys = [y for o in rooms['outlines'] for _, y in o]
+    xs = [p[0] for o in rooms['outlines'] for p in o]
+    ys = [p[1] for o in rooms['outlines'] for p in o]
     pad = 20
     im = im.crop((int(min(xs) * scale) - pad, int(min(ys) * scale) - pad, int(max(xs) * scale) + pad, int(max(ys) * scale) + pad))
     im.save(out, optimize=True)

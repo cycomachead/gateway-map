@@ -1,6 +1,6 @@
 """Seed a floor's patch file from the committed level file.
 
-Usage: python3 bootstrap_patches.py <workdir> <floor id> [--write]
+Usage: python3 bootstrap_patches.py <workdir> <floor id> [--write] [--emitted <dir>]
 
 The level files hold the hand-corrected map. For every numbered room the tracer has no
 polygon for (see compare.py), this proposes a patch:
@@ -10,12 +10,15 @@ polygon for (see compare.py), this proposes a patch:
 - an enclosed room that leaked gets `lines` for the parts of its level polygon's edges that
   cross free space (the doorway drawn without a swing, the gap at a glass front).
 
+With --emitted, the named regions (restrooms, shafts, stairs, the terrace) whose emitted
+polygon misses the committed one badly get the committed polygon as an area too.
 Without --write the proposal is printed; with it, entries are merged into
 patches/floor-<label>.json (existing entries are kept). Review the simplified drawing after
 a run: a seeded line is only as good as the level polygon it came from.
 """
 import json
 import os
+import re
 import sys
 
 from shapely.geometry import LineString, Point, Polygon, box
@@ -34,6 +37,7 @@ from levels import flatten, read_rooms  # noqa: E402
 OPEN_CATEGORIES = {'open', 'piazza', 'informal', 'porch', 'lounge', 'study', 'amenity'}
 MIN_SEAL = 2.0  # pt; shorter uncovered pieces are corners, not gaps
 GOOD = 0.9      # a room matching the level file this well needs no patch
+NAMED_GOOD = 0.6  # a named region (a core) this close keeps its traced shape: the trace is often the better one
 
 
 def wall_mass(w, patches):
@@ -95,8 +99,39 @@ def propose(workdir, fid):
     return areas, lines
 
 
-def main(workdir, fid, write):
+def propose_named(emitted_dir, fid):
+    """Areas for the named regions (restrooms, shafts, stairs, the terrace) whose emitted
+    polygon misses the committed one badly: the committed polygon, in sheet points."""
+    from difflevels import rooms_of, shape
+    cfg = FLOORS[fid]
+    number_re = re.compile(cfg['number_re'])
+    old_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..', 'src', 'data', 'gateway', f'level{fid}.ts')
+    new_path = os.path.join(emitted_dir, f'level{fid}.ts')
+    if not os.path.exists(new_path):
+        return {}
+    old, new = rooms_of(old_path), rooms_of(new_path)
+    patches = load_patches(fid)
+    to_sheet = frame_to_sheet(fid)
+    areas = {}
+    for rid, entry in old.items():
+        if number_re.match(rid.upper()) or rid.startswith('room-') or rid in patches['areas']:
+            continue
+        a = shape(entry)
+        score = 0.0
+        if rid in new:
+            b = shape(new[rid])
+            u = a.union(b).area
+            score = a.intersection(b).area / u if u else 0.0
+        if score >= NAMED_GOOD:
+            continue
+        areas[rid] = [[round(v, 1) for v in to_sheet(pt[0], pt[1])] + ([round(pt[2], 4)] if len(pt) > 2 and pt[2] else []) for pt in entry[2]]
+    return areas
+
+
+def main(workdir, fid, write, emitted_dir=None):
     areas, lines = propose(workdir, fid)
+    if emitted_dir:
+        areas.update(propose_named(emitted_dir, fid))
     print(f'floor {fid}: {len(areas)} area(s), {len(lines)} seal line(s) proposed')
     for rid in areas:
         print(f'  area {rid}')
@@ -114,4 +149,6 @@ def main(workdir, fid, write):
 
 
 if __name__ == '__main__':
-    main(sys.argv[1], sys.argv[2], '--write' in sys.argv)
+    args = [a for a in sys.argv[1:] if not a.startswith('--')]
+    emitted = sys.argv[sys.argv.index('--emitted') + 1] if '--emitted' in sys.argv else None
+    main(args[0], args[1], '--write' in sys.argv, emitted)

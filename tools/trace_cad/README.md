@@ -60,9 +60,12 @@ Per floor, `gen2.py` runs:
 `patches/floor-<label>.json` holds the hand corrections, in the sheet's PDF points:
 `lines` are walls the sheet does not draw (a doorway without a swing, a gap at a glass
 front) and `areas` are polygons for rooms the walls do not enclose (open offices, piazzas,
-porches, phone booths). `bootstrap_patches.py <workdir> <floor> --write` seeds them from
-the committed level file: areas for the open-plan rooms and booths, seal lines where an
-enclosed room's level polygon crosses free space. `preview.py <workdir> <floor> <out.png>`
+porches, phone booths), for rooms the walls trace badly (drawn as given, arcs included) and,
+keyed by the ids `floors.py` names them, for cores the hatching hides (a restroom with its
+stalls, the roof terrace). `bootstrap_patches.py <workdir> <floor> --write [--emitted <dir>]`
+seeds them from the committed level file: areas for the open-plan rooms, booths and `quad`
+rooms, seal lines where a leaked or shared room's level polygon crosses free space, and
+with `--emitted` the named regions whose emitted polygon misses the committed one badly. `preview.py <workdir> <floor> <out.png>`
 draws the trace over the simplified drawing, coloured by parity with the level file, and
 `difflevels.py <emitted dir>` diffs freshly emitted level modules against the committed ones
 (emit into a directory holding a copy of `frame.ts` so both share the frame).

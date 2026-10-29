@@ -223,8 +223,6 @@ FLOORS = {
     # The covered plaza between the Southwest block and the main building is outside.
     '1': dict(pdf='1', label='1', level=1, exterior=[(960, 1600)], exits=True, unnamed=2500, atrium=(1499, 1219, 128, 185, 80.5),
               manual=[EAST_STAIR],
-              # 1420's label sits on its tables: it is named below
-              skip={'1420'},
               # the plan's "Project Rm." 1456 is the TA printer room; 1110 (an "open office" on
               # the plan) is a four-walled reservable meeting room like 1110A/B beside it
               rename={'1456': 'TA PRINTER ROOM', '1110': 'MEETING'},
@@ -245,7 +243,6 @@ FLOORS = {
                   (575, 1478, 'sw-stair', 'circulation', 'Southwest Stair', 'Stair', ['stairs']),
                   (1261.6, 1700.3, 'cafe', 'amenity', 'Cafe', 'Cafe', ['cafe', 'food']),
                   (1608.3, 1732.7, 'cafe-seating', 'amenity', 'Cafe Seating', 'Seating', ['cafe', 'seating']),
-                  ([(420, 1760), (571.7, 1780.2)], None, '1420', 'amenity', 'Social Kitchen / Working Lounge 1420', '1420', ['social', 'kitchen', 'working', 'lounge']),
                   ([(559.3, 995.8), (612.9, 991.7), (551.2, 916.2)], None, 'sw-block-stair', 'circulation', 'Southwest Block Stair', 'Stair', ['stairs']),
                   ([(500, 1320), (487, 1369), (444, 1369), (531, 1412), (534, 1437)], None, 'sw-block-restrooms', 'service', 'Restrooms (Southwest Block)', 'WC', ['restroom']),
               ]),

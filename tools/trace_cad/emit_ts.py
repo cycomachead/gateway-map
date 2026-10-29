@@ -185,7 +185,10 @@ def emit_floor(fid, d, x0, y0, out_dir):
             poly = parts[[o[0] for o in sharers].index(uid)]
         else:
             poly = regions[0]['polygon'] if len(regions) == 1 else union_polys([r['polygon'] for r in regions])
-        if 'atrium' in tags:  # the atrium is an oval: a clean ellipse through its traced outline
+        drawn = len(regions) == 1 and regions[0].get('named') == uid
+        if drawn:  # a patch area drawn for this region: as given
+            pass
+        elif 'atrium' in tags:  # the atrium is an oval: a clean ellipse through its traced outline
             poly = ellipse_of(poly)
         else:
             if BOXED_TAGS & set(tags):

@@ -38,6 +38,7 @@ MAX_ROOM = 150000  # pt²; anything bigger is the corridor network
 MIN_ROOM = 600     # pt²; smaller unlabelled faces are closets and cavities, not rooms (floors.py `min_room` overrides)
 LABEL_REACH = 8.0  # pt; a label on a wall line is given to the nearest face this close
 SIMPLIFY = 0.5     # pt; vertex tolerance after growing the face back to the wall faces
+OUTLINE_TOL = 3.5  # pt; the outline's tolerance (the mullion ticks along the facades are about 3 pt)
 OPEN = 2.5         # pt; notches narrower than twice this (strokes against a wall) are dropped from a room's shape
 POCKET_MIN = 150.0 # pt²; a piece of the room this big behind a narrow neck (a desk against the wall) is kept
 QUAD_IOU = 0.9     # a rectangle covering a room this well replaces its shape
@@ -58,6 +59,9 @@ BOW_RES = 3.5      # pt; the boundary must lie this close to one circle for the 
 EXIT_DIST = 25.0   # pt; a door hinge this close to the outline is an entrance
 CELL_MAX = 4.0     # x the floor's minimum room: smaller unlabelled faces are cells of a hatched core, merged across strokes
 CELL_GAP = 0.6     # pt; extra reach when joining cells (a stroke is 3 pt wide, cells meet across it)
+DECK_CELL = 1500.0 # pt²; faces up to this on a terrace floor may be paver cells of the deck
+WALL = 3.0         # pt; a block standing on the terrace is its rooms plus their walls
+DECK_BLOB = 20000.0 # pt²; an unlabelled region this big inside the terrace is paving, not a room
 DESK_SHORT = (9.0, 20.0)
 DESK_LONG = (18.0, 45.0)
 DESK_WIDTH = 0.9
@@ -530,6 +534,19 @@ def build(fid, workdir):
         if r.get('hand'):
             r['area'] = int(Polygon(flatten(r['polygon'])).area)
             del r['hand']
+    # a boxed room (a lab whose benches are drawn as walls) is its minimum rectangle, which
+    # may reach over a neighbour: it gives up whatever another room already covers
+    others = {r['id']: Polygon(flatten(r['polygon'])).buffer(0) for r in rooms}
+    for r in rooms:
+        if r['id'] not in cfg['box']:
+            continue
+        g = others[r['id']]
+        for oid, og in others.items():
+            if oid != r['id'] and oid not in cfg['box'] and g.intersects(og) and g.intersection(og).area > 2:
+                g = biggest(g.difference(og.buffer(0.5)))
+        if g is not others[r['id']]:
+            r['polygon'] = ring(g)
+            others[r['id']] = g
     # patch areas: the polygon clipped to the free space of the label's face (an open office
     # in the corridor network, a booth whose label stands outside its open front), minus the
     # rooms already placed. Open-plan kinds carry the 'open plan' tag; a booth is a room.
@@ -574,28 +591,64 @@ def build(fid, workdir):
     # a piece of the building holds rooms; the legend box and the north arrow do not
     room_points = [Point(Polygon(flatten(r['polygon'])).representative_point()) for r in rooms if len(r['polygon']) >= 3]
     pieces = [p for p in pieces if p.area >= max_room / 10 and any(p.contains(q) for q in room_points)]
-    outlines = [ring(merge_collinear(biggest(Polygon(p.exterior).simplify(1.0 * scale))), arcs=True) for p in pieces]
+    # the facade's mullion boxes make a zigzag of the painted edge: a coarser tolerance keeps
+    # the corners and the curves, and drops the ticks
+    outlines = [ring(merge_collinear(biggest(Polygon(p.exterior).simplify(OUTLINE_TOL * scale))), arcs=True) for p in pieces]
     # faces nobody labelled: cores, restrooms, stairs, closets, for floors.py's `named` list
     labelled = set(owners)
     min_room = cfg['min_room'] if 'min_room' in cfg else MIN_ROOM * scale * scale  # a configured minimum is in the sheet's own points
     spare = [f for f in faces if id(f) not in labelled and id(f) not in ext_ids and id(f) not in POCKETS_TAKEN and f.area <= max_room
              and not any(f.contains(Point(l['x'], l['y'])) for l, _ in open_labels + patched)]
     # Hatched floors, stair treads, elevator X marks and stall partitions chop a core into
-    # cells: cells below room size that touch across a stroke are merged back into one region.
+    # cells: cells below room size that touch across a stroke are merged back together and
+    # into the room-sized face they touch (the stalls into the restroom); room-sized faces
+    # never merge with each other (the shafts of a bank stay apart).
+    reach = BUF * scale + CELL_GAP
     small = [f for f in spare if f.area < min_room * CELL_MAX]
+    big = [f for f in spare if f.area >= min_room * CELL_MAX]
     merged = []
+    blobs = []
     if small:
-        joined = unary_union([f.buffer(BUF * scale + CELL_GAP) for f in small])
-        for blob in (joined.geoms if isinstance(joined, MultiPolygon) else [joined]):
-            g = biggest(Polygon(blob.exterior).buffer(-(BUF * scale + CELL_GAP), join_style='mitre'))
-            if not g.is_empty and g.area >= min_room:
-                merged.append(g)
+        joined = unary_union([f.buffer(reach) for f in small])
+        blobs = list(joined.geoms) if isinstance(joined, MultiPolygon) else [joined]
+    big_tree = STRtree(big)
+    taken = set()
+    grown = {id(f): [f] for f in big}
+    for k, blob in enumerate(blobs):
+        hits = [big[i] for i in big_tree.query(blob) if big[i].intersects(blob)]
+        if hits:  # the blob joins the room-sized face it touches most
+            host = max(hits, key=lambda f: f.intersection(blob).area)
+            grown[id(host)].append(Polygon(blob.exterior).buffer(-reach, join_style='mitre'))
+            taken.add(k)
+    for f in big:
+        parts = [p for p in grown[id(f)] if not p.is_empty]
+        g = f if len(parts) == 1 else biggest(unary_union([p.buffer(reach / 2 + 0.1) for p in parts]).buffer(-(reach / 2 + 0.1)))
+        merged.append(Polygon(g.exterior) if not g.is_empty else f)
+    for k, blob in enumerate(blobs):
+        if k in taken:
+            continue
+        g = biggest(Polygon(blob.exterior).buffer(-reach, join_style='mitre'))
+        if not g.is_empty and g.area >= min_room:
+            merged.append(g)
     unl = []
-    for f in [f for f in spare if f.area >= min_room * CELL_MAX] + merged:
+    for f in merged:
         if f.area < min_room:
             continue
         c = f.representative_point()
         unl.append({'area': int(f.area), 'x': round(c.x, 1), 'y': round(c.y, 1), 'polygon': shape(f, scale)})
+    # a patch area for a named region (a restroom, a shaft, a stair, by the id floors.py
+    # names it) is that region, drawn as given; whatever was traced inside it goes
+    number_re = re.compile(cfg['number_re'])
+    label_ids = {l['id'] for l in labels(geom, cfg)}
+    for rid, drawn in patches['areas'].items():
+        if number_re.match(rid) or rid in label_ids:
+            continue
+        g = Polygon(flatten(drawn)).buffer(0)
+        if g.is_empty or rid == 'terrace':
+            continue
+        unl = [u for u in unl if g.intersection(Polygon(flatten(u['polygon'])).buffer(0)).area <= 0.5 * u['area']]
+        c = g.representative_point()
+        unl.append({'area': int(g.area), 'x': round(c.x, 1), 'y': round(c.y, 1), 'polygon': [list(pt) for pt in drawn], 'named': rid})
     ell = atrium_polygon(cfg)
     if ell is not None:
         # the stairs winding down inside the atrium's rail chop the opening into pieces: the
@@ -603,6 +656,58 @@ def build(fid, workdir):
         unl = [u for u in unl if not ell.contains(Point(u['x'], u['y']))]
         c = ell.centroid
         unl.append({'area': int(ell.area), 'atrium': True, 'x': round(c.x, 1), 'y': round(c.y, 1), 'polygon': ring(ell)})
+    # a roof terrace (floor 5): the paved decks holding the configured seeds, one open area
+    # around the indoor blocks (which become its holes)
+    if cfg['terrace'] and 'terrace' in patches['areas']:
+        # the deck as drawn in the patch file; the blocks standing on it (the rooms and
+        # regions inside, with their walls) are its holes
+        drawn = patches['areas']['terrace']
+        deck = Polygon(flatten(drawn)).buffer(0)
+        # the merged paver cells are not regions to name (a block's rooms are far smaller)
+        unl = [u for u in unl if u.get('atrium') or u.get('named') or not (deck.contains(Point(u['x'], u['y'])) and u['area'] > DECK_BLOB * scale * scale)]
+        inside = [Polygon(flatten(r['polygon'])).buffer(0) for r in rooms if deck.contains(Point(Polygon(flatten(r['polygon'])).representative_point()))]
+        inside += [Polygon(flatten(u['polygon'])).buffer(0) for u in unl if deck.contains(Point(u['x'], u['y']))]
+        blocks = unary_union([b.buffer(WALL * scale, join_style='mitre') for b in inside]) if inside else Polygon()
+        room = {'id': 'terrace', 'name': 'ROOF TERRACE', 'kind': 'open', 'area': int(deck.difference(blocks).area), 'polygon': [list(pt) for pt in drawn]}
+        holes = []
+        for b in (blocks.geoms if isinstance(blocks, MultiPolygon) else ([blocks] if not blocks.is_empty else [])):
+            b = b.intersection(deck)
+            for piece in (b.geoms if hasattr(b, 'geoms') else [b]):
+                if piece.area >= 200:
+                    holes.append(ring(piece.simplify(SIMPLIFY * scale)))
+        if holes:
+            room['holes'] = holes
+        rooms.append(room)
+    elif cfg['terrace']:
+        # the pavers' hatching chops the deck into cells: the cells joined across their
+        # strokes form the deck, and a seed on any paver takes the whole deck it stands on
+        reach = BUF * scale + CELL_GAP
+        cells = [f for f in faces if id(f) not in ext_ids and f.area < DECK_CELL * scale * scale]
+        joined = unary_union([f.buffer(reach) for f in cells]) if cells else Polygon()
+        blobs = list(joined.geoms) if isinstance(joined, MultiPolygon) else ([joined] if not joined.is_empty else [])
+        decks = []
+        for sx, sy in cfg['terrace']:
+            p = Point(sx, sy)
+            hit = [b for b in blobs if b.contains(p)]
+            if hit:
+                decks.append(Polygon(max(hit, key=lambda b: b.area).exterior).buffer(-reach, join_style='mitre'))
+            else:
+                hit = [f for f in faces if id(f) not in ext_ids and f.contains(p)]
+                if hit:
+                    decks.append(min(hit, key=lambda f: f.area))
+        if decks:
+            deck = unary_union(decks)
+            deck = biggest(deck) if isinstance(deck, MultiPolygon) else deck
+            unl = [u for u in unl if not deck.buffer(reach).contains(Point(u['x'], u['y']))]  # paver cells are not regions to name
+            # the blocks standing on the deck: everything the deck's outer ring encloses but the deck
+            outer = Polygon(deck.exterior)
+            room = {'id': 'terrace', 'name': 'ROOF TERRACE', 'kind': 'open', 'area': int(deck.area), 'polygon': ring(outer.simplify(SIMPLIFY * scale), arcs=True)}
+            holes = [[[round(float(x), 1), round(float(y), 1)] for x, y in Polygon(h).simplify(SIMPLIFY * scale).exterior.coords[:-1]] for h in deck.interiors if Polygon(h).area >= 200]
+            if holes:
+                room['holes'] = holes
+            rooms.append(room)
+            for f in decks:
+                ext_ids.add(id(f))  # the deck is not a region to name
     # entrances: door hinges on the outline
     exits = []
     if cfg['exits'] and outlines:
