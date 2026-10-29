@@ -242,6 +242,8 @@ FLOORS = {
               named=[n for n in CORES if n is not SW_STAIR] + SW_RESTROOMS + [
                   # the Northeast core's multi-stall restroom is east of the elevators here
                   (1640, 840, 'ne-restroom', 'service', *MENS),
+                  # the transit-style fare gates between the Northeast elevators and the lobby
+                  (1497, 982, 'fare-gates', 'service', '🚨 Fare Gates (Turnstiles)', '🚨 Fare Gates', ['fare gates', 'turnstiles', 'entry', 'access']),
                   (575, 1478, 'sw-stair', 'circulation', 'Southwest Stair', 'Stair', ['stairs']),
                   (1261.6, 1700.3, 'cafe', 'amenity', 'Cafe', 'Cafe', ['cafe', 'food']),
                   (1608.3, 1732.7, 'cafe-seating', 'amenity', 'Cafe Seating', 'Seating', ['cafe', 'seating']),

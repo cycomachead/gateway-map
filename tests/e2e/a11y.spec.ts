@@ -48,6 +48,12 @@ test('dark colour scheme has no axe violations', async ({ page }) => {
   await expectNoViolations(page, 'dark mode');
 });
 
+test('the Info dialog has no axe violations', async ({ page }) => {
+  await page.getByRole('button', { name: 'Info', exact: true }).click();
+  await expect(page.getByRole('dialog', { name: 'Gateway Building Info' })).toBeVisible();
+  await expectNoViolations(page, 'info dialog');
+});
+
 test('the About dialog has no axe violations', async ({ page }) => {
   await page.getByRole('button', { name: 'About' }).click();
   await expect(page.getByRole('dialog', { name: 'About Gateway Map' })).toBeVisible();
