@@ -30,12 +30,15 @@ warnings.filterwarnings('ignore', category=RuntimeWarning, module='shapely')  # 
 
 BUF = 1.5          # pt; half the width the strokes are painted with (seals drafting gaps up to 3 pt)
 GROW = 0.0         # pt; how far a face is grown back towards the stroke centres (0 keeps the level files' inset, 1.5 would be the stroke centre)
-MIN_FACE = 300     # pt²; smaller pockets are wall cavities and furniture, never rooms
+MIN_FACE = 20      # pt²; smaller pockets are drafting slivers; cells of hatched cores are kept to be merged
+MIN_LABEL_FACE = 300  # pt²; a label is never given to a smaller face
 MAX_ROOM = 150000  # pt²; anything bigger is the corridor network
 LABEL_REACH = 8.0  # pt; a label on a wall line is given to the nearest face this close
 SIMPLIFY = 0.5     # pt; vertex tolerance after growing the face back to the wall faces
 QUAD_IOU = 0.9     # a rectangle covering a room this well replaces its shape
 EXIT_DIST = 25.0   # pt; a door hinge this close to the outline is an entrance
+CELL_MAX = 4.0     # x the floor's minimum room: smaller unlabelled faces are cells of a hatched core, merged across strokes
+CELL_GAP = 0.6     # pt; extra reach when joining cells (a stroke is 3 pt wide, cells meet across it)
 DESK_SHORT = (9.0, 20.0)
 DESK_LONG = (18.0, 45.0)
 DESK_WIDTH = 0.9
@@ -190,11 +193,11 @@ def build(fid, workdir):
 
     def face_at(x, y):
         p = Point(x, y)
-        hits = [faces[i] for i in tree.query(p) if faces[i].contains(p)]
+        hits = [faces[i] for i in tree.query(p) if faces[i].contains(p) and faces[i].area >= MIN_LABEL_FACE * scale * scale]
         if hits:
             return min(hits, key=lambda f: f.area)
         near = [(faces[i].distance(p), faces[i]) for i in tree.query(p.buffer(LABEL_REACH * scale))]
-        near = [(d, f) for d, f in near if d <= LABEL_REACH * scale and id(f) not in ext_ids]
+        near = [(d, f) for d, f in near if d <= LABEL_REACH * scale and id(f) not in ext_ids and f.area >= MIN_LABEL_FACE * scale * scale]
         return min(near, key=lambda t: (t[0], t[1].area))[1] if near else None
 
     max_room = MAX_ROOM * scale * scale
@@ -227,7 +230,10 @@ def build(fid, workdir):
         for lab, part in zip(labs, parts):
             rid = lab['id']
             g = shape(part, scale, quad=rid in cfg['quad'], boxed=rid in cfg['box'])
-            rooms.append({'id': rid, 'name': lab['name'], 'kind': 'room', 'area': int(part.area), 'polygon': ring(g)})
+            room = {'id': rid, 'name': lab['name'], 'kind': 'room', 'area': int(part.area), 'polygon': ring(g)}
+            if len(labs) > 1:
+                room['shared'] = [l['id'] for l in labs if l is not lab]
+            rooms.append(room)
     for r in rooms:
         if r.get('hand'):
             r['area'] = int(Polygon(r['polygon']).area)
@@ -270,15 +276,28 @@ def build(fid, workdir):
     # the building: the border minus the outside; its boundary is the outline
     building = box(*BORDER).difference(outside)
     pieces = sorted((list(building.geoms) if isinstance(building, MultiPolygon) else [building]), key=lambda p: -p.area)
-    outlines = [ring(merge_collinear(biggest(Polygon(p.exterior).simplify(1.0 * scale)))) for p in pieces if p.area >= max_room / 10]
+    # a piece of the building holds rooms; the legend box and the north arrow do not
+    room_points = [Point(Polygon(r['polygon']).representative_point()) for r in rooms if len(r['polygon']) >= 3]
+    pieces = [p for p in pieces if p.area >= max_room / 10 and any(p.contains(q) for q in room_points)]
+    outlines = [ring(merge_collinear(biggest(Polygon(p.exterior).simplify(1.0 * scale)))) for p in pieces]
     # faces nobody labelled: cores, restrooms, stairs, closets, for floors.py's `named` list
     labelled = set(owners)
     min_room = cfg.get('min_room', 600) * scale * scale
+    spare = [f for f in faces if id(f) not in labelled and id(f) not in ext_ids and f.area <= max_room
+             and not any(f.contains(Point(l['x'], l['y'])) for l, _ in open_labels + patched)]
+    # Hatched floors, stair treads, elevator X marks and stall partitions chop a core into
+    # cells: cells below room size that touch across a stroke are merged back into one region.
+    small = [f for f in spare if f.area < min_room * CELL_MAX]
+    merged = []
+    if small:
+        joined = unary_union([f.buffer(BUF * scale + CELL_GAP) for f in small])
+        for blob in (joined.geoms if isinstance(joined, MultiPolygon) else [joined]):
+            g = biggest(Polygon(blob.exterior).buffer(-(BUF * scale + CELL_GAP), join_style='mitre'))
+            if not g.is_empty and g.area >= min_room:
+                merged.append(g)
     unl = []
-    for f in faces:
-        if id(f) in labelled or id(f) in ext_ids or f.area < min_room or f.area > max_room:
-            continue
-        if any(f.contains(Point(l['x'], l['y'])) for l, _ in open_labels + patched):
+    for f in [f for f in spare if f.area >= min_room * CELL_MAX] + merged:
+        if f.area < min_room:
             continue
         g = shape(f, scale)
         c = f.representative_point()

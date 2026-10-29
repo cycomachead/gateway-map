@@ -51,6 +51,8 @@ def propose(workdir, fid):
     label_at = {l['id']: Point(l['x'], l['y']) for l in labels(geom, cfg)}
     patches = load_patches(fid)
     rows = {r[0]: r for r in report(workdir, fid)}
+    traced = json.load(open(os.path.join(workdir, f"{cfg['pdf']}_rooms.json")))
+    shared = {r['id'] for r in traced['rooms'] if r.get('shared')}
     to_sheet = frame_to_sheet(fid)
     mass = wall_mass(w, patches).buffer(1.0)
     areas, lines = {}, []
@@ -70,9 +72,11 @@ def propose(workdir, fid):
             if rid not in patches['areas']:
                 areas[rid] = [[round(x, 1), round(y, 1)] for x, y in poly.exterior.coords[:-1]]
             continue
-        if row[2] != 'missing':
-            continue  # traced but off: not a gap to seal; see the report
-        # enclosed room that leaked: the edges of its polygon that run through free space
+        # an enclosed room that leaked, or shares its face with a neighbour: the edges of its
+        # level polygon that run through free space are the gaps to seal. A room traced on
+        # its own but shaped differently is not a gap (its swing area, a notch), so no line.
+        if row[2] != 'missing' and rid not in shared:
+            continue
         n = len(poly.exterior.coords) - 1
         pts = list(poly.exterior.coords[:-1])
         for i in range(n):

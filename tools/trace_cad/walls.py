@@ -30,6 +30,8 @@ COLUMN_TOUCH = 4.0      # pt; a column is only kept when a wall stroke at least 
 DOOR_R = (7.0, 24.0)    # pt; door-leaf radii (2' to 5' doors at 1/16" = 1')
 DOOR_RES = 0.6
 DOOR_SWEEP = (60.0, 120.0)  # degrees
+CHAIN_MIN = 10.0        # pt; shorter gentle chains are fixture outlines
+CHAIN_TURN = 35.0       # degrees; a chain turning more sharply anywhere is furniture
 
 
 def fit_circle(pts):
@@ -64,6 +66,36 @@ def wall_strokes(geom, scale):
         if not (x0 <= ax <= x1 and y0 <= ay <= y1):
             continue
         out.append([ax, ay, bx, by])
+    return out
+
+
+def gentle_chains(geom, scale):
+    """Open chained polylines that turn gently: the curved facades and glass fronts, drawn as
+    chains of short pieces that the extractor's furniture rule (a multi-piece path of
+    furniture size) would otherwise hide. Chairs and fixtures turn sharply or close; door
+    swings are circles of door radius and are left to `door_arcs`."""
+    out = []
+    lo, hi = DOOR_R[0] * scale, DOOR_R[1] * scale
+    for pts in geom.get('chains', []):
+        if len(pts) < 4 or math.dist(pts[0], pts[-1]) < 2.0 * scale:
+            continue
+        length = sum(math.dist(pts[i], pts[i + 1]) for i in range(len(pts) - 1))
+        if length < CHAIN_MIN * scale:
+            continue
+        turns = []
+        for i in range(1, len(pts) - 1):
+            ax, ay = pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]
+            bx, by = pts[i + 1][0] - pts[i][0], pts[i + 1][1] - pts[i][1]
+            na, nb = math.hypot(ax, ay), math.hypot(bx, by)
+            if na < 1e-6 or nb < 1e-6:
+                continue
+            turns.append(math.degrees(math.acos(max(-1.0, min(1.0, (ax * bx + ay * by) / (na * nb))))))
+        if turns and max(turns) > CHAIN_TURN:
+            continue
+        (cx, cy), r, res = fit_circle(pts)
+        if lo <= r <= hi and res <= DOOR_RES * scale:
+            continue
+        out.extend([[pts[i][0], pts[i][1], pts[i + 1][0], pts[i + 1][1]] for i in range(len(pts) - 1)])
     return out
 
 
@@ -152,7 +184,7 @@ def build(fid, workdir):
     geom = json.load(open(os.path.join(workdir, f"{cfg['pdf']}_geom.json")))
     scale = scale_of(cfg)
     patches = load_patches(fid)
-    walls = wall_strokes(geom, scale)
+    walls = wall_strokes(geom, scale) + gentle_chains(geom, scale)
     cols = column_discs(geom, walls, scale)
     doors = door_arcs(geom, scale)
     closures = closures_of(doors)
