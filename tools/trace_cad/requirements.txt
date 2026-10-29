@@ -1,0 +1,8 @@
+# python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
+pymupdf
+numpy
+Pillow
+shapely
+opencv-python-headless
+scipy
+scikit-image

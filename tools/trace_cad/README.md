@@ -24,6 +24,46 @@ regions with their index, blue desks, orange furniture clusters with the open la
 dots and their cells in grey, magenta outline, grey exterior). Extracting a sheet needs ~1.5 GB of
 RAM, so floors are processed one at a time.
 
+## Vector tracer (`gen2.py`)
+
+The newer path traces rooms from a wall-only vector drawing instead of a raster flood fill;
+see `docs/superpowers/specs/2026-10-29-vector-tracer-design.md`. It needs only the packages in
+`requirements.txt`:
+
+```sh
+python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
+.venv/bin/python gen2.py ../../floorplans/architect-pdfs/floorplans <workdir>      # every floor
+.venv/bin/python gen2.py ../../floorplans/architect-pdfs/floorplans <workdir> 3    # one floor
+.venv/bin/python emit_ts.py <workdir> ../../src/data/gateway
+```
+
+Per floor, `gen2.py` runs:
+
+1. `extract.py` (cached in `<pdf>_geom.json`).
+2. `walls.py` — the wall strokes (black, unfilled, not furniture, at least 0.5 pt), the
+   structural columns (circles of column size whose rim meets a wall, kept as discs) and both
+   chords of every door swing (one closes the doorway, the other lies along the open leaf).
+   Writes `<pdf>_walls.json` and `<pdf>_walls.pdf`, the simplified drawing: walls black,
+   columns blue, door closures red, patch lines green, labels grey. Open it to read the
+   coordinates for a patch.
+3. `faces.py` — paints the strokes 3 pt wide, subtracts them from the plan border and takes
+   each piece of free space as a face (holes filled, so furniture never cuts a room). The
+   face holding a room number is that room; faces without a label are listed as unlabelled
+   regions for `floors.py`'s `named` seeds; the outside face gives the outline. Labels in
+   the corridor network are open-plan areas and come from the patch file. Writes
+   `<pdf>_rooms.json`, which `emit_ts.py` reads as before.
+4. `compare.py` — every numbered room of the committed `level*.ts` against the trace, as
+   IoU counts at 0.95 / 0.9 / 0.8 and the rooms below 0.8. A change to the tracer may not
+   lower the counts on any floor.
+
+`patches/floor-<label>.json` holds the hand corrections, in the sheet's PDF points:
+`lines` are walls the sheet does not draw (a doorway without a swing, a gap at a glass
+front) and `areas` are polygons for rooms the walls do not enclose (open offices, piazzas,
+porches, phone booths). `bootstrap_patches.py <workdir> <floor> --write` seeds them from
+the committed level file: areas for the open-plan rooms and booths, seal lines where an
+enclosed room's level polygon crosses free space. `preview.py <workdir> <floor> <out.png>`
+draws the trace over the simplified drawing, coloured by parity with the level file.
+
 ## How it works
 
 1. `extract.py` — pulls every stroke, small chained polyline, furniture quad and text line out
