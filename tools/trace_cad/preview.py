@@ -52,9 +52,8 @@ def render(workdir, fid, out, scale=0.5):
     for x, y in rooms['exits']:
         dr.ellipse([x * scale - 4, y * scale - 4, x * scale + 4, y * scale + 4], outline=(0, 120, 0), width=2)
     # the level file's rooms the tracer has no polygon for
-    sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'departments'))
     from compare import frame_to_sheet
-    from levels import flatten, read_rooms
+    from levels import read_rooms
     to_sheet = frame_to_sheet(fid)
     for r in read_rooms(fid):
         row = rows.get(r['id'].upper())

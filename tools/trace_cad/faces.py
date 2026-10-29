@@ -32,9 +32,10 @@ warnings.filterwarnings('ignore', category=RuntimeWarning, module='shapely')  # 
 
 BUF = 1.5          # pt; half the width the strokes are painted with (seals drafting gaps up to 3 pt)
 GROW = 0.0         # pt; how far a face is grown back towards the stroke centres (0 keeps the level files' inset, 1.5 would be the stroke centre)
-MIN_FACE = 20      # pt²; smaller pockets are drafting slivers; cells of hatched cores are kept to be merged
+MIN_FACE = 4       # pt²; smaller pockets are drafting slivers; the cells of hatched cores (tiles) are kept to be merged
 MIN_LABEL_FACE = 300  # pt²; a label is never given to a smaller face
 MAX_ROOM = 150000  # pt²; anything bigger is the corridor network
+MIN_ROOM = 600     # pt²; smaller unlabelled faces are closets and cavities, not rooms (floors.py `min_room` overrides)
 LABEL_REACH = 8.0  # pt; a label on a wall line is given to the nearest face this close
 SIMPLIFY = 0.5     # pt; vertex tolerance after growing the face back to the wall faces
 OPEN = 2.5         # pt; notches narrower than twice this (strokes against a wall) are dropped from a room's shape
@@ -47,8 +48,10 @@ POCKET_MAX = 1000.0  # pt²; an unlabelled face this small touching one room onl
 NOTCH_MAX = 400.0  # pt²; ... and may fill notches up to this (a credenza, a column's bite); a bowed wall leaves far more
 NOTCH_SHARE = 0.25 # or up to this share of the room (a desk drawn against the wall of a small office)
 NOTCH_TOTAL = 0.3  # all notches together at most this share of the room
+NOTCH_CAP = 1200.0 # pt²; no notch bigger than this however big the room (an oval's corners are not notches)
 FIT_OUTLIER = 3.0  # pt; boundary points further from a fitted wall are dropped once (a notch)
 CORNER_ZONE = 5.0  # pt; boundary points this close to a rectangle corner (rounded by the opening) fit no wall
+WALL_SUPPORT = 0.5 # a fitted wall's points must span at least this share of its length
 CURVE_SAG = 3.0    # pt; a wall along which the drawing's curves bow further than this is an arc
 BOW_REACH = 30.0   # pt; boundary points this far from a fitted wall may be that wall bowing
 BOW_RES = 3.5      # pt; the boundary must lie this close to one circle for the wall to be an arc
@@ -201,7 +204,7 @@ def fit(face, scale, quad=False, boxed=False):
             return False
         covers = largest_piece(g.difference(cand)) <= SLIVER_MAX * scale * scale
         filled = cand.difference(g)
-        fills = largest_piece(filled) <= max(NOTCH_MAX * scale * scale, NOTCH_SHARE * g.area) and filled.area <= NOTCH_TOTAL * g.area
+        fills = largest_piece(filled) <= max(NOTCH_MAX, min(NOTCH_SHARE * g.area, NOTCH_CAP)) * scale * scale and filled.area <= NOTCH_TOTAL * g.area
         return covers and fills
     # the rectangle first (it is the exact answer for most rooms), four fitted walls for the
     # rooms whose walls are not at right angles
@@ -297,15 +300,21 @@ def four_walls(g, scale):
             if keep.sum() < 3 or keep.all():
                 break
             Q = Q[keep]
-        lines.append((c, u))
+        lines.append((c, u, (Q @ u).max() - (Q @ u).min()))
     out = []
     for k in range(4):
-        (c1, u1), (c2, u2) = lines[k - 1], lines[k]
+        (c1, u1, _), (c2, u2, _) = lines[k - 1], lines[k]
         A = np.array([u1, -u2]).T
         if abs(np.linalg.det(A)) < 1e-3:
             return None
         t = np.linalg.solve(A, c2 - c1)
         out.append(c1 + u1 * t[0])
+    # every wall must be supported by points along most of its length: a three-walled room
+    # gives the rectangle a fourth side with almost no points, and the corner shoots off
+    for k in range(4):
+        side = np.linalg.norm(out[(k + 1) % 4] - out[k])
+        if side < 4.0 * scale or lines[k][2] < WALL_SUPPORT * side:
+            return None
     q = Polygon(out)
     return q if q.is_valid and q.area > 0 else None
 
@@ -466,7 +475,11 @@ def build(fid, workdir):
     for lab in labels(geom, cfg):
         rid = lab['id']
         if rid in cfg['hand']:
-            rooms.append({'id': rid, 'name': lab['name'], 'kind': 'room', 'polygon': [[float(x), float(y)] for x, y in cfg['hand'][rid]], 'hand': True})
+            poly = cfg['hand'][rid]
+            name = lab['name']
+            if isinstance(poly, tuple):
+                name, poly = poly
+            rooms.append({'id': rid, 'name': name, 'kind': 'room', 'polygon': [[float(x), float(y)] for x, y in poly], 'hand': True})
             continue
         f = face_at(lab['x'], lab['y'])
         if f is None:
@@ -502,6 +515,17 @@ def build(fid, workdir):
             if len(labs) > 1:
                 room['shared'] = [l['id'] for l in labs if l is not lab]
             rooms.append(room)
+    # hand polygons whose room has no label on this sheet (the Lower Level's teaching rooms,
+    # the lecture halls) carry their name in the config: ('name', polygon)
+    drawn_ids = {r['id'] for r in rooms}
+    for rid, poly in cfg['hand'].items():
+        if rid in drawn_ids:
+            continue
+        if isinstance(poly, tuple):
+            name, poly = poly
+            rooms.append({'id': rid, 'name': name, 'kind': 'room', 'polygon': [[float(x), float(y)] for x, y in poly], 'hand': True})
+        else:
+            print(f'  hand polygon for {rid}: no such label')
     for r in rooms:
         if r.get('hand'):
             r['area'] = int(Polygon(flatten(r['polygon'])).area)
@@ -545,7 +569,7 @@ def build(fid, workdir):
         if category(lab['name'], lab['id']) != 'circulation':
             print(f"  {lab['id']} {lab['name']!r}: label in the open (face {int(f.area)} pt²), no patch area")
     # the building: the border minus the outside; its boundary is the outline
-    building = box(*BORDER).difference(outside)
+    building = box(*BORDER).difference(outside).buffer(-BUF * scale, join_style='mitre', mitre_limit=2.0)  # back to the strokes' centres
     pieces = sorted((list(building.geoms) if isinstance(building, MultiPolygon) else [building]), key=lambda p: -p.area)
     # a piece of the building holds rooms; the legend box and the north arrow do not
     room_points = [Point(Polygon(flatten(r['polygon'])).representative_point()) for r in rooms if len(r['polygon']) >= 3]
@@ -553,7 +577,7 @@ def build(fid, workdir):
     outlines = [ring(merge_collinear(biggest(Polygon(p.exterior).simplify(1.0 * scale))), arcs=True) for p in pieces]
     # faces nobody labelled: cores, restrooms, stairs, closets, for floors.py's `named` list
     labelled = set(owners)
-    min_room = cfg.get('min_room', 600) * scale * scale
+    min_room = cfg['min_room'] if 'min_room' in cfg else MIN_ROOM * scale * scale  # a configured minimum is in the sheet's own points
     spare = [f for f in faces if id(f) not in labelled and id(f) not in ext_ids and id(f) not in POCKETS_TAKEN and f.area <= max_room
              and not any(f.contains(Point(l['x'], l['y'])) for l, _ in open_labels + patched)]
     # Hatched floors, stair treads, elevator X marks and stall partitions chop a core into
@@ -574,6 +598,9 @@ def build(fid, workdir):
         unl.append({'area': int(f.area), 'x': round(c.x, 1), 'y': round(c.y, 1), 'polygon': shape(f, scale)})
     ell = atrium_polygon(cfg)
     if ell is not None:
+        # the stairs winding down inside the atrium's rail chop the opening into pieces: the
+        # configured ellipse replaces whatever was traced inside it
+        unl = [u for u in unl if not ell.contains(Point(u['x'], u['y']))]
         c = ell.centroid
         unl.append({'area': int(ell.area), 'atrium': True, 'x': round(c.x, 1), 'y': round(c.y, 1), 'polygon': ring(ell)})
     # entrances: door hinges on the outline

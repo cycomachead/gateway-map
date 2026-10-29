@@ -83,7 +83,7 @@ MENS = ("Men's Restroom", "Men's Restroom", ['restroom', 'men'])
 WOMENS = ("Women's Restroom", "Women's Restroom", ['restroom', 'women'])
 NEUTRAL = ('Gender Neutral Restroom', 'Gender\nNeutral', ['restroom', 'all gender', 'gender neutral'])
 NE_RESTROOMS = [(1375, 850, 'ne-restroom', 'service', *MENS),
-                ([(1250, 880), (1240, 870), (1262, 892)], None, 'ne-restroom-2', 'service', *NEUTRAL)]
+                ([(1250, 880), (1240, 870), (1262, 892), (1278, 870)], None, 'ne-restroom-2', 'service', *NEUTRAL)]
 SW_RESTROOMS = [(1600, 1610, 'sw-restroom', 'service', *WOMENS),
                 (1670, 1515, 'sw-restroom-2', 'service', *NEUTRAL)]
 CORES = NE_ELEVATORS + SW_ELEVATORS + [NE_STAIR, SW_STAIR, ATRIUM]

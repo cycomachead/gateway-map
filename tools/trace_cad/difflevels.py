@@ -42,6 +42,16 @@ def diff(emitted_dir, fid):
         print(f'floor {fid}: not emitted')
         return
     old, new = rooms_of(old_path), rooms_of(new_path)
+    # unnumbered rooms are named by size order, so they are matched by overlap, not by id
+    old_un = {k: shape(v) for k, v in old.items() if k.startswith('room-')}
+    renamed = {}
+    for k in [k for k in new if k.startswith('room-')]:
+        g = shape(new[k])
+        best = max(old_un.items(), key=lambda kv: g.intersection(kv[1]).area / (g.union(kv[1]).area or 1), default=None)
+        if best is not None and g.intersection(best[1]).area > 0:
+            renamed[k] = best[0]
+            del old_un[best[0]]
+    new = {renamed.get(k, k): v for k, v in new.items()}
     print(f'floor {fid}: {len(old)} rooms committed, {len(new)} emitted')
     gone, added = sorted(set(old) - set(new)), sorted(set(new) - set(old))
     if gone:

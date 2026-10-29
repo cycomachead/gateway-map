@@ -21,6 +21,7 @@ import sys
 from floors import FLOORS, category, display_name, wing
 
 PAD = 20.0
+FRAME_SLACK = 6.0  # pt; an outline may stick this far into the padding before the frame is recomputed
 
 
 def similarity(t):
@@ -616,7 +617,7 @@ def main(workdir, out_dir, reframe=False):
         # forces a new one. Only some floors traced: the frame is kept regardless.
         x0, y0, w, h = read_frame(frame_path)
         nx, ny, nw, nh = frame(data)
-        fits = len(data) < len(FLOORS) or (nx >= x0 - 1 and ny >= y0 - 1 and nx + nw <= x0 + w + 1 and ny + nh <= y0 + h + 1)
+        fits = len(data) < len(FLOORS) or (nx >= x0 - FRAME_SLACK and ny >= y0 - FRAME_SLACK and nx + nw <= x0 + w + FRAME_SLACK and ny + nh <= y0 + h + FRAME_SLACK)
         print(f'floors {", ".join(sorted(data))}: keeping the existing frame' if fits else 'traced outlines fall outside the existing frame: recomputing it')
     if not fits:
         x0, y0, w, h = frame(data)
