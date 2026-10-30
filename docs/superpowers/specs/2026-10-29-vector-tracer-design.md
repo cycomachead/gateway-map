@@ -166,7 +166,7 @@ the counts on any floor.
   court (a thin channel along the Hearst canopy would otherwise be filled and the canopy
   joined to the building). Column bumps go within their discs. The outline is then
   simplified at 1.5 pt and its curves fitted with arcs checked at 6 pt (not 2: the building
-  is 3,000 pt across). Floor 3: 61 vertices with arcs instead of 473 without.
+  is 3,000 pt across). Floor 3: 120 vertices with 9 arcs instead of 473 without any.
 - **Desks only in the open.** The old tracer drew desks where they stood on an open area;
   the first vector version drew every desk-sized quad, including the ones in offices.
 - **Cores square to their walls.** The region of an elevator bank is chopped by the X marks
