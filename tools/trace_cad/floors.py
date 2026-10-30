@@ -66,7 +66,7 @@ NE_ELEVATORS = _EL('ne', 'Northeast', [(1431.3, 944.8), (1482.6, 934.0), (1533.9
 SW_ELEVATORS = _EL('sw', 'Southwest', [(1497.6, 1533.5), (1545.6, 1515.0), (1597.9, 1508.6)])
 # A stair's treads split it into a cluster per flight, so several points are given and
 # their regions are merged (any entry's x/y may be a list of points).
-NE_STAIR = ([(1345, 950), (1385, 1010), (1390, 965)], None, 'ne-stair', 'circulation', 'Northeast Stair', 'Stair', ['stairs'])
+NE_STAIR = ([(1345, 950), (1390, 965)], None, 'ne-stair', 'circulation', 'Northeast Stair', 'Stair', ['stairs'])
 SW_STAIR = ([(575, 1490), (600, 1480), (610, 1520)], None, 'sw-stair', 'circulation', 'Southwest Stair', 'Stair', ['stairs'])
 # The East Stair runs down along the inner facade of the Northeast wing's tail. Its traced
 # region spills into the corridor along the facade, so it is drawn by hand (a `manual` entry):
@@ -87,17 +87,30 @@ NE_RESTROOMS = [(1375, 850, 'ne-restroom', 'service', *MENS),
 SW_RESTROOMS = [(1600, 1610, 'sw-restroom', 'service', *WOMENS),
                 (1670, 1515, 'sw-restroom-2', 'service', *NEUTRAL)]
 CORES = NE_ELEVATORS + SW_ELEVATORS + [NE_STAIR, SW_STAIR, ATRIUM]
+# the copy room beside the consultation rooms X403/X405 carries no number on the plans
+COPY_ROOM = lambda n: (658, 1376, f'{n}401', 'service', f'Copy Room {n}401', f'{n}401', ['copy', 'printer'])
 LL_CORES = (_EL('ne', 'Northeast', [(2406.6, 856.1), (2488.8, 848.9), (2570.9, 841.7)])
             + _EL('sw', 'Southwest', [(2398.4, 1787.8), (2476.8, 1768.0), (2559.7, 1768.0)])
             + [(2295, 875, 'ne-stair', 'circulation', 'Northeast Stair', 'Stair', ['stairs']),
                # the gender inclusive restroom B1309 (its label sits in the upper half, the
                # lower row of stalls traces as a separate region) and the single-user B1307
                ([(2749, 1720), (2690, 1935)], None, 'B1309', 'service', 'Gender Inclusive Restroom B1309', 'Gender\nInclusive', ['restroom', 'all gender', 'gender inclusive']),
-               (2846, 1653, 'B1307', 'service', 'Single-User Restroom B1307', 'Single\nUser', ['restroom', 'all gender', 'single user'])])
+               (2846, 1653, 'B1307', 'service', 'Single-User Restroom B1307', 'Single\nUser', ['restroom', 'all gender', 'single user']),
+               # the two rooms in the north-east corner are one recording studio
+               ([(2777, 865), (2786, 970)], None, 'recording-studio', 'lab', 'Recording Studio', 'Recording\nStudio', ['recording', 'studio'])])
 # Floor 5's restrooms stand in the south bar: two multi-stall rooms (the western one has the
 # urinals) and, by the elevators, two single-occupancy rooms drawn by hand from their walls.
 F5_RESTROOMS = [(1305, 1700, 'men-restroom', 'service', "Men's Restroom", "Men's\nRestroom", ['restroom', 'men']),
                 (1390, 1690, 'women-restroom', 'service', "Women's Restroom", "Women's\nRestroom", ['restroom', 'women'])]
+# The Southwest block's restrooms on floor 1 are one hatched region (the floor pattern crosses
+# their walls), so the three rooms are drawn by hand: two multi-stall rooms, the upper and the
+# lower half of the block, and the single-user room in the upper right corner. Which of the two
+# is the men's is not legible on the plan.
+SW_BLOCK_RESTROOMS = [
+    ('sw-block-womens', 'service', *WOMENS, [[410.4, 1312.8], [576.2, 1292.4], [577.6, 1304.4], [546.8, 1308.1], [549.6, 1331.0], [580.4, 1327.2], [584.7, 1362.0], [418.9, 1382.3]]),
+    ('sw-block-mens', 'service', *MENS, [[420.5, 1395.2], [586.3, 1374.9], [593.2, 1431.5], [427.5, 1451.8]]),
+    ('sw-block-neutral', 'service', *NEUTRAL, [[549.1, 1310.1], [575.9, 1306.8], [578.2, 1325.7], [551.4, 1329.0]]),
+]
 F5_SINGLE_RESTROOMS = [('single-restroom-1', 'service', *NEUTRAL, [(1264.0, 1530.0), (1310.0, 1524.5), (1317.0, 1586.0), (1271.5, 1591.5)]),
                        ('single-restroom-2', 'service', *NEUTRAL, [(1358.0, 1518.6), (1404.0, 1513.0), (1411.2, 1572.8), (1364.5, 1572.1)])]
 
@@ -129,10 +142,10 @@ LL_TEACHING = {
         (2101.8, 1099.0), (2134.6, 1074.3), (2166.4, 1048.3), (2197.1, 1021.0),
     ]),
     'B1019': ('ACTIVE LEARNING CLASSROOM', [
-        (1233.9, 1463.7), (1280.5, 1453.2), (1327.4, 1444.4), (1374.6, 1437.3), (1422.0, 1432.0),
+        (1269.6, 1455.7), (1280.5, 1453.2), (1327.4, 1444.4), (1374.6, 1437.3), (1422.0, 1432.0),
         (1469.6, 1428.3), (1517.3, 1426.4), (1565.0, 1426.2), (1612.7, 1427.8), (1660.3, 1431.1),
         (1707.8, 1436.0), (1755.0, 1442.8), (1797.9, 1451.0), (1797.9, 1730.0), (1812.0, 1730.0),
-        (1811.7, 1765.6), (1269.6, 1765.6), (1269.6, 1481.5),
+        (1811.7, 1765.6), (1269.6, 1765.6),
     ]),
     'B1023': ('CLASSROOM', [
         (1026.0, 1922.2), (1025.7, 1631.0), (1256.5, 1631.0), (1256.6, 1922.0),
@@ -217,12 +230,17 @@ FLOORS = {
                     'B1030': ('OPEN STUDY', _ellipse(*LL_STUDY_WEST)),
                     'B1010': ('OPEN STUDY', _ellipse(*LL_STUDY_EAST))},
               manual=[LL_MAIN_STAIR],
-              # the closet between classrooms B1008 and B1009
-              blank=[(2860, 1315)],
+              # the closet between classrooms B1008 and B1009, the pits and closets by the
+              # Southwest stair and the elevators, and the cell at the Northeast stair's foot
+              blank=[(2860, 1315), (780, 1184), (888, 1524), (956, 1531), (693, 1559), (2283, 802)],
+              # the step-free route from the Lower Level is by the Southwest elevators
+              pois=[('accessible-elevators', 'Accessible elevators', 'accessible', (2480, 1716), 'Step-free route to the floors above')],
               quad={'B1040H'}),
     # The covered plaza between the Southwest block and the main building is outside.
     '1': dict(pdf='1', label='1', level=1, exterior=[(960, 1600)], exits=True, unnamed=2500, atrium=(1499, 1219, 128, 185, 80.5),
-              manual=[EAST_STAIR],
+              # a sliver on the stair landing by the Northeast elevators
+              blank=[(1610, 959)],
+              manual=[EAST_STAIR, *SW_BLOCK_RESTROOMS],
               # the plan's "Project Rm." 1456 is the TA printer room; 1110 (an "open office" on
               # the plan) is a four-walled reservable meeting room like 1110A/B beside it
               rename={'1456': 'TA PRINTER ROOM', '1110': 'MEETING'},
@@ -248,18 +266,17 @@ FLOORS = {
                   (1261.6, 1700.3, 'cafe', 'amenity', 'Cafe', 'Cafe', ['cafe', 'food']),
                   (1608.3, 1732.7, 'cafe-seating', 'amenity', 'Cafe Seating', 'Seating', ['cafe', 'seating']),
                   ([(559.3, 995.8), (612.9, 991.7), (551.2, 916.2)], None, 'sw-block-stair', 'circulation', 'Southwest Block Stair', 'Stair', ['stairs']),
-                  ([(500, 1320), (487, 1369), (444, 1369), (531, 1412), (534, 1437)], None, 'sw-block-restrooms', 'service', 'Restrooms (Southwest Block)', 'WC', ['restroom']),
               ]),
     # Floors 2 and 3 follow floor 4 (below): the research labs are boxes, the kitchens and
     # meeting rooms with a pilaster or a curved wall are four-cornered. Stairs wind down inside
     # the atrium's rail on these floors, so the rail's ellipse is given.
-    '2': dict(pdf='2', label='2', level=2, named=CORES + NE_RESTROOMS + SW_RESTROOMS, manual=[EAST_STAIR],
+    '2': dict(pdf='2', label='2', level=2, named=CORES + NE_RESTROOMS + SW_RESTROOMS + [COPY_ROOM('2')], manual=[EAST_STAIR],
               box={'2184', '2192', '2322', '2404', '2408'},
               quad={'2130', '2133', '2219', '2228', '2345', '2355', '2361', '2389', '2431', '2445'},
               hand={'2310': [(1655, 1652), (1770, 1648), (1816, 1822), (1666, 1827)],
                     '2161': [(2128, 469), (2203, 452), (2255, 514), (2168, 594), (2132, 545)]},
               atrium=(1460, 1260, 252, 152, -14)),
-    '3': dict(pdf='3', label='3', level=3, named=CORES + NE_RESTROOMS + SW_RESTROOMS, manual=[EAST_STAIR],
+    '3': dict(pdf='3', label='3', level=3, named=CORES + NE_RESTROOMS + SW_RESTROOMS + [COPY_ROOM('3')], manual=[EAST_STAIR],
               box={'3131', '3184', '3192', '3322', '3406'},
               quad={'3130', '3161', '3219', '3350', '3355', '3375', '3431', '3447'},
               # the labs 3184/3192 are split by benches drawn as walls; 3310 opens onto 3340
@@ -271,7 +288,7 @@ FLOORS = {
     # benches); the social kitchens 4130 and 4350 are boxes with one curved wall, and the
     # meeting rooms 4355/4375 and the study room 4310 are rectangles with a pilaster, a
     # cabinet or a closet in a corner.
-    '4': dict(pdf='4', label='4', level=4, named=CORES + NE_RESTROOMS + SW_RESTROOMS, manual=[EAST_STAIR],
+    '4': dict(pdf='4', label='4', level=4, named=CORES + NE_RESTROOMS + SW_RESTROOMS + [COPY_ROOM('4')], manual=[EAST_STAIR],
               box={'4131', '4184', '4192', '4408', '4322'}, quad={'4130', '4350', '4355', '4375', '4310'}),
     # Floor 5 is set back: the indoor blocks stand on a paved roof terrace inside the parapet
     # (seeded on its pavers and walkways). The passage between the restroom blocks of the south

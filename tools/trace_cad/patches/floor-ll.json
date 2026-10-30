@@ -307,5 +307,22 @@
     921.2
    ]
   ]
- }
+ },
+ "doors": [
+  [
+   2251,
+   784,
+   "Northeast stair"
+  ],
+  [
+   2627,
+   981,
+   "Corridor door by B1008"
+  ],
+  [
+   913,
+   1050,
+   "Flexible Work Area B1040"
+  ]
+ ]
 }

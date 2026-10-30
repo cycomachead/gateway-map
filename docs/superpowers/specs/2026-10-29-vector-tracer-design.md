@@ -176,3 +176,41 @@ the counts on any floor.
   diagonals cancel) and the emitter boxes the cores along it, turns a hand-drawn core box
   onto it when within 15°, and splits an elevator bank along it. On floor 3 both banks come
   out within 0.3° of their facades, which is what the drawing shows.
+
+## Findings from the second review (2026-10-30)
+
+- **Shafts have X marks.** The traced region of an elevator bank is the free space inside
+  the shafts, which the biggest shaft (drawn deeper, without a plain X) stretches, so equal
+  squares cut from it reached behind the small shafts into the restroom. Each shaft's X is
+  two strokes of one length crossing at their midpoints; the bank is now drawn from them
+  (`shaft_boxes`, `bank_cells`): one cell per seed, a pitch wide, as deep as the marks, side
+  by side along the bank, a seed without a mark getting the cell at that pitch beyond its
+  neighbours. The Lower Level's shafts, whose seeds had fallen into the squares below them,
+  come out on the shafts and next to each other.
+- **A stair and its bank share a back wall.** The X marks the cab; the hoistway's back wall
+  is the stair's. Where a stair edge parallel to the bank lies within 30 pt of the bank's
+  edge, the shorter is brought out to the longer (`align_cores`).
+- **Rooms do not overlap.** Fitted one by one, two rooms could cross by a hairline along a
+  shared partition, a box by a wedge of its neighbour. A last pass (`resolve_overlaps`) cuts
+  every overlap above half a point from the polygon with the lower standing (traced room
+  over open area over named region over unnumbered room; between equals the bigger gives
+  way; a polygon with arcs only when nothing else can). Six to thirteen cuts per floor, all
+  slivers; the piazza 2004 and the atrium still meet by 7 pt² because both are arcs.
+- **Doors are data; markers on mention.** Every door between corridors and open areas is in
+  the level file (`doors`: the doorway from hinge to strike, or hinge to hinge for a pair, and
+  the open leaf's end), for directions later. Nothing is drawn for them unless the patch
+  file names the door, which puts a small circle on the doorway holding the door's own swing
+  in miniature, so the arc shows which way it opens.
+- **Open areas carry the drafting too.** A piazza clipped to the free space took every door
+  chord and column bite along its glass front as a notch; the outline's tidy (jogs filled or
+  cut, column bumps removed) now runs on open areas, and their curves get arcs: 2002 went
+  from 262 vertices to 35.
+- **Hatching merges rooms.** The floor pattern of floor 1's Southwest-block restrooms crosses
+  their walls, so the block traced as one region; its three rooms are drawn by hand
+  (`manual`), the single-user room in the corner and the two multi-stall halves, which of
+  them is the men's being a guess.
+- **Data, not code, for the rest.** The copy room beside X403 has no number on the plans
+  (a `named` seed on floors 2–4), the Lower Level's north-east corner is one recording
+  studio (two seeds, one room), the pits and closets left off the map are `blank` points, a
+  room without a number takes its wing from `wings`, and the stair icon and the accessible
+  marker are a tag and a POI.

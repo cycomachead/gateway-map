@@ -21,6 +21,7 @@ from shapely import voronoi_polygons
 from shapely.geometry import LineString, MultiPoint, MultiPolygon, Point, Polygon, box
 from shapely.ops import unary_union
 from shapely.strtree import STRtree
+from shapely.prepared import prep
 
 from floors import FLOORS, category
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'departments'))
@@ -105,9 +106,12 @@ def free_space(w, patches):
     """(faces, exterior faces) of the free space: the plan border minus the painted walls."""
     lines = [LineString([(a, b), (c, d)]) for a, b, c, d in w['walls']]
     lines += [LineString([(a, b), (c, d)]) for a, b, c, d in w['closures']]
-    lines += [LineString([(a, b), (c, d)]) for a, b, c, d, *_ in patches['lines']]
+    # a patch line is a wall, not a stroke: painted as thick as a wall's two strokes, so the
+    # space it closes off is not a pocket to absorb (a nook sealed off from a classroom)
+    patched = [LineString([(a, b), (c, d)]) for a, b, c, d, *_ in patches['lines']]
     scale = w['scale']
     mass = unary_union([ln.buffer(BUF * scale, cap_style='flat') for ln in lines if ln.length > 0]
+                       + [ln.buffer(2 * BUF * scale, cap_style='flat') for ln in patched if ln.length > 0]
                        + [Point(cx, cy).buffer(r + 0.5) for cx, cy, r in w['columns']])
     border = box(*BORDER)
     free = border.difference(mass)
@@ -645,6 +649,131 @@ def align_walls(rooms, scale):
     return moved
 
 
+DOOR_MIN = 12.0     # pt; passage doors are 3' and wider (chairs and booth seats are drawn as quarter circles too)
+DOOR_SIDE = 6.0     # pt; how far from the doorway each side of it is sampled
+DOOR_MENTION = 25.0  # pt; a door the patches mention is the detected swing nearest its point, this close
+SHAFT_LEN = (30.0, 130.0)  # pt; the diagonals of an elevator shaft's X mark
+SHAFT_SIDE = (25.0, 90.0)  # pt; the sides of the box the X spans
+
+
+def doors_of(w, rooms, unl, outlines, wall_tree, segs, scale, mentions=()):
+    """The doors: every passage door (between corridors and open areas: not a room's own door,
+    not into a core, not an entrance), plus the doors the patches mention, which are shown on
+    the map. A door is {'a', 'b': the doorway along the wall (hinge to strike, or hinge to
+    hinge for a pair of leaves), 'o': where the leaf hinged at a stands open, 'leaves', 'show',
+    'name'}. The strike is the arc end that lies on the walls; the other end is the open leaf."""
+    best = {}
+    for cx, cy, r, p0, p1 in w['doors']:  # a swing drawn twice (polyline and bézier) counts once
+        k = (round(cx / scale), round(cy / scale))
+        if k not in best or r > best[k][2]:
+            best[k] = (cx, cy, r, p0, p1)
+    zones = [('room', r['id'], prep(Polygon(flatten(r['polygon'])).buffer(1.5 * scale))) for r in rooms if r['kind'] != 'open' and len(r['polygon']) >= 3]
+    zones += [('core', None, prep(Polygon(flatten(u['polygon'])).buffer(1.5 * scale))) for u in unl]
+    zones += [('open', r['id'], prep(Polygon(flatten(r['polygon'])).buffer(1.5 * scale))) for r in rooms if r['kind'] == 'open' and len(r['polygon']) >= 3]
+    inside = [prep(Polygon(flatten(o))) for o in outlines]
+
+    def side(p):
+        pt = Point(p)
+        for kind, rid, g in zones:
+            if g.contains(pt):
+                return kind, rid
+        return ('corridor', None) if any(b.contains(pt) for b in inside) else ('outside', None)
+
+    def wall_dist(p):
+        return segs[wall_tree.nearest(Point(p))].distance(Point(p))
+
+    leaves = []  # (hinge, strike, open end, passage?)
+    for cx, cy, r, p0, p1 in best.values():
+        if r < DOOR_MIN * scale:
+            continue
+        strike, leaf = (p0, p1) if wall_dist(p0) <= wall_dist(p1) else (p1, p0)
+        mx, my = (cx + strike[0]) / 2, (cy + strike[1]) / 2
+        dx, dy = strike[0] - cx, strike[1] - cy
+        n = math.hypot(dx, dy) or 1.0
+        nx, ny = -dy / n * DOOR_SIDE * scale, dx / n * DOOR_SIDE * scale
+        a, b = side((mx + nx, my + ny)), side((mx - nx, my - ny))
+        if a == b and a[0] == 'open':
+            continue  # a booth seat drawn as a quarter circle
+        leaves.append(((cx, cy), tuple(strike), tuple(leaf), not ({a[0], b[0]} & {'room', 'core', 'outside'})))
+    # two leaves hinged at opposite jambs that strike each other are one double door
+    used, doors = set(), []
+    for i, (h1, s1, o1, p1) in enumerate(leaves):
+        if i in used:
+            continue
+        j = next((j for j, (h2, s2, o2, p2) in enumerate(leaves) if j > i and j not in used
+                  and math.dist(s1, s2) <= 6 * scale and abs(math.dist(h1, s1) - math.dist(h2, s2)) <= 4 * scale
+                  and math.dist(h1, h2) >= 1.5 * math.dist(h1, s1)), None)
+        if j is not None:
+            used.add(j)
+            h2, s2, o2, p2 = leaves[j]
+            doors.append({'a': h1, 'b': h2, 'o': o1, 'leaves': 2, 'passage': p1 or p2})
+        else:
+            doors.append({'a': h1, 'b': s1, 'o': o1, 'leaves': 1, 'passage': p1})
+    mid = lambda d: Point((d['a'][0] + d['b'][0]) / 2, (d['a'][1] + d['b'][1]) / 2)
+    for x, y, name in mentions:  # a mentioned door is shown, with its name
+        near = min(doors, key=lambda d: mid(d).distance(Point(x, y)), default=None)
+        if near is None or mid(near).distance(Point(x, y)) > DOOR_MENTION * scale:
+            print(f'  door at ({x}, {y}) {name!r}: no swing within {DOOR_MENTION} pt')
+            continue
+        near['show'] = True
+        if name:
+            near['name'] = name
+    out = []
+    for d in doors:
+        if not (d['passage'] or d.get('show')):
+            continue
+        rec = {k: [round(d[k][0], 1), round(d[k][1], 1)] for k in 'abo'}
+        rec['leaves'] = d['leaves']
+        if d.get('show'):
+            rec['show'] = True
+        if d.get('name'):
+            rec['name'] = d['name']
+        out.append(rec)
+    return out
+
+
+def shaft_boxes(w, scale):
+    """Elevator shafts are drawn as a box with an X across it: two strokes of one length that
+    cross at their midpoints, roughly at right angles, whose four ends span a box of shaft
+    size. Returns the boxes ([x, y] x 4), for the emitter to draw the banks from."""
+    lo, hi = SHAFT_LEN[0] * scale, SHAFT_LEN[1] * scale
+    mids = {}
+    for a, b, c, d in w['walls']:
+        L = math.hypot(c - a, d - b)
+        if lo <= L <= hi:
+            mids.setdefault((round((a + c) / 2 / (3 * scale)), round((b + d) / 2 / (3 * scale))), []).append((a, b, c, d, L))
+    boxes = {}
+    with warnings.catch_warnings():
+        warnings.simplefilter('ignore', RuntimeWarning)
+        for ss in mids.values():
+            for i in range(len(ss)):
+                for j in range(i + 1, len(ss)):
+                    p, q = ss[i], ss[j]
+                    if abs(p[4] - q[4]) > 3 * scale:
+                        continue
+                    dp = math.degrees(math.atan2(p[3] - p[1], p[2] - p[0]))
+                    dq = math.degrees(math.atan2(q[3] - q[1], q[2] - q[0]))
+                    if not 60 <= abs((dp - dq + 90) % 180 - 90) <= 120:
+                        continue
+                    rect = MultiPoint([(p[0], p[1]), (p[2], p[3]), (q[0], q[1]), (q[2], q[3])]).minimum_rotated_rectangle
+                    if rect.geom_type != 'Polygon':
+                        continue
+                    pts = list(rect.exterior.coords)[:4]
+                    s1, s2 = math.dist(pts[0], pts[1]), math.dist(pts[1], pts[2])
+                    if min(s1, s2) < SHAFT_SIDE[0] * scale or max(s1, s2) > SHAFT_SIDE[1] * scale or max(s1, s2) > 1.6 * min(s1, s2):
+                        continue
+                    c = rect.centroid
+                    boxes[(round(c.x / scale), round(c.y / scale))] = [[round(float(x), 1), round(float(y), 1)] for x, y in pts]
+    return list(boxes.values())
+
+
+def tidy_open(g, scale, discs):
+    """An open-plan area clipped to the free space carries the drafting along its walls (the
+    door chords, column bites and mullion boxes) as the building outline does: the same tidy."""
+    t = biggest(tidy_outline(g, scale, discs))
+    return t if not t.is_empty and t.is_valid else g
+
+
 def build(fid, workdir):
     cfg = FLOORS[fid]
     prefix = os.path.join(workdir, cfg['pdf'])
@@ -778,8 +907,16 @@ def build(fid, workdir):
                     r['holes'] = holes
                 elif 'holes' in r:
                     del r['holes']
-        # a room drawn by hand keeps its vertices (and arcs) as given; an open area takes the clip
-        poly = [list(pt) for pt in drawn] if kind == 'room' and g.area >= 0.95 * Polygon(flatten(drawn)).area else ring(g)
+        # a room drawn by hand keeps its vertices (and arcs) as given; an open area takes the
+        # clip, without the drafting along its walls and with its curves as arcs
+        if kind == 'room' and g.area >= 0.95 * Polygon(flatten(drawn)).area:
+            poly = [list(pt) for pt in drawn]
+        elif kind == 'open':
+            g = tidy_open(g, scale, discs)
+            poly = ring(merge_collinear(valid(Polygon(g.exterior).simplify(OUTLINE_TOL * scale), Polygon(g.exterior))),
+                        arcs=True, tol=OUTLINE_ARC_TOL, dev=OUTLINE_ARC_DEV, min_iou=0.99)
+        else:
+            poly = ring(g)
         room = {'id': rid, 'name': lab['name'], 'kind': kind, 'area': int(g.area), 'polygon': poly}
         holes = [[[round(float(x), 1), round(float(y), 1)] for x, y in h.coords[:-1]] for h in g.interiors if Polygon(h).area >= 20]
         if holes and kind == 'open':
@@ -936,11 +1073,12 @@ def build(fid, workdir):
             u['axis'] = ax
     open_zones = unary_union([Polygon(flatten(r['polygon']), [flatten(h) for h in r.get('holes', [])]).buffer(0)
                               for r in rooms if r['kind'] == 'open' and len(r['polygon']) >= 3])
-    out = {'floor': fid, 'rooms': rooms, 'outlines': outlines, 'unlabelled': unl, 'exits': exits, 'desks': desks(geom, scale, open_zones)}
+    out = {'floor': fid, 'rooms': rooms, 'outlines': outlines, 'unlabelled': unl, 'exits': exits, 'desks': desks(geom, scale, open_zones),
+           'doors': doors_of(w, rooms, unl, outlines, wall_tree, segs, scale, patches['doors']), 'shafts': shaft_boxes(w, scale)}
     json.dump(out, open(prefix + '_rooms.json', 'w'))
     n_open = sum(r['kind'] == 'open' for r in rooms)
     print(f"floor {fid}: {len(rooms) - n_open} enclosed rooms, {n_open} open areas ({len(open_labels)} labels in the open), "
-          f"{len(outlines)} outline(s), {len(unl)} unlabelled regions, {len(exits)} exits, {len(out['desks'])} desks, "
+          f"{len(outlines)} outline(s), {len(unl)} unlabelled regions, {len(exits)} exits, {len(out['desks'])} desks, {len(out['doors'])} doors, {len(out['shafts'])} shafts, "
           f"{aligned} rooms aligned with their neighbours")
     return out
 

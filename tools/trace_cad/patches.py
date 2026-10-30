@@ -4,12 +4,15 @@
 points, read off the simplified drawing (`<pdf>_walls.pdf`):
 
     { "lines": [[x0, y0, x1, y1, "3353: door drawn without a swing"], ...],
-      "areas": { "3150": [[x, y], [x, y], ...], ... } }
+      "areas": { "3150": [[x, y], [x, y], ...], ... },
+      "doors": [[x, y, "Northeast stair"], ...] }
 
 `lines` are walls the sheet does not draw (a doorway without a swing, a gap at a glass
 front). `areas` are the open-plan rooms, whose label sits in the corridor network; the
 polygon is clipped to the free space when the rooms are built. A room that is not open-plan
 (a booth, a room the walls do not trace well) is drawn exactly as given, bulges included.
+`doors` are doors to show on the map (every door is traced; a marker is drawn only for these):
+the detected swing nearest the point, with the name given.
 Missing file: no patches.
 """
 import json
@@ -28,7 +31,7 @@ def path_for(fid):
 def load_patches(fid):
     path = path_for(fid)
     if not os.path.exists(path):
-        return {'lines': [], 'areas': {}}
+        return {'lines': [], 'areas': {}, 'doors': []}
     data = json.load(open(path))
     lines = []
     for ln in data.get('lines', []):
@@ -37,4 +40,9 @@ def load_patches(fid):
         lines.append([float(v) for v in ln[:4]] + [str(ln[4]) if len(ln) > 4 else ''])
     # a vertex may carry a third value, the bulge of the edge starting there (an arc)
     areas = {str(k): [[float(c) for c in pt] for pt in v] for k, v in data.get('areas', {}).items()}
-    return {'lines': lines, 'areas': areas}
+    doors = []
+    for dr in data.get('doors', []):
+        if len(dr) < 2:
+            raise SystemExit(f'{path}: a door needs x, y: {dr}')
+        doors.append([float(dr[0]), float(dr[1]), str(dr[2]) if len(dr) > 2 else ''])
+    return {'lines': lines, 'areas': areas, 'doors': doors}

@@ -58,15 +58,21 @@ Per floor, `gen2.py` runs:
    walls when they cover it, else the simplified face with arcs; walls of neighbouring
    rooms that nearly share a line are put on it. The outline loses the drafting along the
    facade (door chords, mullion boxes, column bumps) before it is simplified and its curves
-   fitted with arcs. Desks are kept only in the open areas. Writes `<pdf>_rooms.json`,
-   which `emit_ts.py` reads as before.
+   fitted with arcs; an open-plan area's clip is tidied the same way and gets arcs. Desks
+   are kept only in the open areas. Elevator shafts are found by their X marks (two strokes
+   of one length crossing at their midpoints) and listed as `shafts`; every door between
+   corridors and open areas is listed as `doors` (hinge, strike, open end; pairs of leaves as
+   one door), with the doors the patch file names marked to be shown. A patch line is painted
+   as thick as a wall, so what it closes off is never absorbed as a pocket. Writes
+   `<pdf>_rooms.json`, which `emit_ts.py` reads as before.
 4. `compare.py` — every numbered room of the committed `level*.ts` against the trace, as
    IoU counts at 0.95 / 0.9 / 0.8 and the rooms below 0.8. A change to the tracer may not
    lower the counts on any floor.
 
 `patches/floor-<label>.json` holds the hand corrections, in the sheet's PDF points:
 `lines` are walls the sheet does not draw (a doorway without a swing, a gap at a glass
-front) and `areas` are polygons for rooms the walls do not enclose (open offices, piazzas,
+front), `doors` are points naming the doors to show on the map (the nearest detected swing
+gets a marker and the name), and `areas` are polygons for rooms the walls do not enclose (open offices, piazzas,
 porches, phone booths), for rooms the walls trace badly (drawn as given, arcs included) and,
 keyed by the ids `floors.py` names them, for cores the hatching hides (a restroom with its
 stalls, the roof terrace). `bootstrap_patches.py <workdir> <floor> --write [--emitted <dir>]`
@@ -217,9 +223,13 @@ draws the trace over the simplified drawing, coloured by parity with the level f
    onto the turned wall instead). A final pass guarantees rooms never overlap: arcs fitted
    after the reconciliation, boxed cores, ellipses and hand shapes can still bite a neighbour,
    so each polygon gives up what a higher-priority one covers (enclosed rooms, then cores and
-   named regions, then open areas, then unnumbered rooms); an overlap nowhere wider than
-   1.5 px is a shared wall whose faces were just turned parallel and is left alone, and any
-   spike a cut leaves behind is removed. Coordinates are PDF points of the upper-floor sheets,
+   named regions, then open areas, then unnumbered rooms), and a last pass (`resolve_overlaps`)
+   cuts whatever is left above half a point, hairlines along shared partitions included
+   (between equals the bigger polygon gives way; one with arcs only when the other cannot).
+   Elevator banks are drawn from their shafts' X marks (`bank_cells`): a cell per seed, a
+   pitch wide and as deep as the marks, side by side; a stair edge within 30 pt of its bank's
+   edge is put on one line with it (`align_cores`). Doors go out as `DoorSpec`s, the ones the
+   patch file names flagged to be shown. Coordinates are PDF points of the upper-floor sheets,
    shifted so the building starts near the origin (`frame.ts`); the frame is kept across reruns
    while the building still fits in it (`--reframe` recomputes it).
 
