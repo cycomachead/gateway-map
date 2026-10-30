@@ -193,6 +193,7 @@ button { font: inherit; color: inherit; }
 .space--open { --c: var(--c-open); }
 .space--study { --c: var(--c-study); }
 .space--study .space__shape { fill-opacity: 0.55; }
+.space--suite .space__shape { fill-opacity: 0.12; stroke-dasharray: 8 5; }
 .space--amenity { --c: var(--c-amenity); }
 .space--service { --c: var(--c-service); }
 .space--copy { --c: var(--c-copy); }

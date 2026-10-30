@@ -96,8 +96,7 @@ LL_CORES = (_EL('ne', 'Northeast', [(2406.6, 856.1), (2488.8, 848.9), (2570.9, 8
                # lower row of stalls traces as a separate region) and the single-user B1307
                ([(2749, 1720), (2690, 1935)], None, 'B1309', 'service', 'Gender Inclusive Restroom B1309', 'Gender\nInclusive', ['restroom', 'all gender', 'gender inclusive']),
                (2846, 1653, 'B1307', 'service', 'Single-User Restroom B1307', 'Single\nUser', ['restroom', 'all gender', 'single user']),
-               # the two rooms in the north-east corner are one recording studio
-               ([(2777, 865), (2786, 970)], None, 'recording-studio', 'lab', 'Recording Studio', 'Recording\nStudio', ['recording', 'studio'])])
+               ])
 # Floor 5's restrooms stand in the south bar: two multi-stall rooms (the western one has the
 # urinals) and, by the elevators, two single-occupancy rooms drawn by hand from their walls.
 F5_RESTROOMS = [(1305, 1700, 'men-restroom', 'service', "Men's Restroom", "Men's\nRestroom", ['restroom', 'men']),
@@ -229,7 +228,14 @@ FLOORS = {
                     'B1040': [(400, 836), (912, 752), (957, 1016), (887, 1068), (457, 1139)],
                     'B1030': ('OPEN STUDY', _ellipse(*LL_STUDY_WEST)),
                     'B1010': ('OPEN STUDY', _ellipse(*LL_STUDY_EAST))},
-              manual=[LL_MAIN_STAIR],
+              # the north-east corner is a recording studio: its rooms sit in one suite, drawn
+              # with straight lines around the cores, and take the suite's name
+              # the storage room east of the hall's partition is not closed on the sheet
+              manual=[LL_MAIN_STAIR, ('storage-ne', 'service', 'Storage Room', 'Storage', ['storage'], [[2505, 630], [2608, 630], [2608, 795], [2505, 795]]),
+                      ('recording-studio', 'lab', 'Recording Studio', '', ['recording', 'studio'], [[2159.3, 574.4], [2174.7, 779.0], [2157.5, 780.3], [2256.6, 898.9], [2169.2, 972.0], [2371.7, 980.8], [2264.8, 929.8], [2255.5, 821.6], [2302.5, 817.5], [2501.5, 810.7], [2485.7, 626.8], [2607.7, 616.3], [2623.3, 799.0], [2614.6, 799.7], [2620.5, 868.6], [2623.1, 959.2], [2705.3, 943.0], [2669.9, 534.3], [2346.8, 563.5], [2240.0, 571.8], [2239.7, 568.3]])],
+              suites={'recording-studio': ('lab', 'Recording Studio', ['recording', 'studio'], [(2759.7, 668.5), (2703.5, 463.3), (2107.3, 670.1), (2776.4, 857.7), (2137.5, 854.3), (2287.6, 499.5), (2523.2, 478.8), (2405.7, 489.0), (2175.8, 508.1)])},
+              # room-12's tip and room-10's walls: plain boxes
+              square=[(2105, 881), (2095, 688)],
               # the closet between classrooms B1008 and B1009, the pits and closets by the
               # Southwest stair and the elevators, and the cell at the Northeast stair's foot
               blank=[(2860, 1315), (780, 1184), (888, 1524), (956, 1531), (693, 1559), (2283, 802)],
@@ -273,16 +279,18 @@ FLOORS = {
     # meeting rooms with a pilaster or a curved wall are four-cornered. Stairs wind down inside
     # the atrium's rail on these floors, so the rail's ellipse is given.
     '2': dict(pdf='2', label='2', level=2, named=CORES + NE_RESTROOMS + SW_RESTROOMS + [COPY_ROOM('2')], manual=[EAST_STAIR],
-              box={'2184', '2190', '2192', '2322', '2404', '2408'},
+              box={'2184', '2190', '2192', '2322', '2360', '2404', '2408'},
               quad={'2130', '2133', '2219', '2228', '2345', '2355', '2361', '2389', '2431', '2445'},
-              hand={'2310': [(1655, 1652), (1770, 1648), (1816, 1822), (1666, 1827)],
+              hand={  # 2405's front wall on the line of 2403's, its sides parallel (as 3405 above it)
+                    '2405': [[519.1, 1388.4], [562.9, 1373.7], [569.8, 1431.8], [525.0, 1437.3]],'2310': [[1651.4, 1658.6], [1767.9, 1644.0], [1814.6, 1820.8], [1673.9, 1838.4]],
                     '2161': [(2128, 469), (2203, 452), (2255, 514), (2168, 594), (2132, 545)]},
               atrium=(1460, 1260, 252, 152, -14)),
     '3': dict(pdf='3', label='3', level=3, named=CORES + NE_RESTROOMS + SW_RESTROOMS + [COPY_ROOM('3')], manual=[EAST_STAIR],
-              box={'3131', '3184', '3192', '3322', '3340', '3406'},
+              box={'3131', '3184', '3192', '3322', '3340', '3406'}, asis={'3190'},
               quad={'3130', '3161', '3219', '3350', '3355', '3375', '3431', '3447'},
               # the labs 3184/3192 are split by benches drawn as walls; 3310 opens onto 3340
-              hand={  # 3405's front wall on the line of 3403's, its sides parallel; the sheet's own wall bends
+              hand={  # 3112 reaches to 3114's wall; the partition between is casework
+                    '3112': [[1306.9, 755.0], [1233.3, 771.0], [1237.7, 824.7], [1318.2, 808.2]],  # 3405's front wall on the line of 3403's, its sides parallel; the sheet's own wall bends
                     '3405': [[517.8, 1387.1], [563.5, 1372.1], [570.9, 1432.8], [524.1, 1438.6]],'3184': [(2424, 1100), (2560, 1240), (2474, 1320), (2340, 1175)],
                     '3192': [(2428, 1098), (2525, 1047), (2620, 1152), (2563, 1236)],
                     '3310': [[1650.0, 1650.0], [1770.0, 1650.0], [1818.0, 1824.0], [1670.6, 1827.1]]},
@@ -291,10 +299,11 @@ FLOORS = {
     # benches); the social kitchens 4130 and 4350 are boxes with one curved wall, and the
     # meeting rooms 4355/4375 and the study room 4310 are rectangles with a pilaster, a
     # cabinet or a closet in a corner.
-    '4': dict(pdf='4', label='4', level=4, named=CORES + NE_RESTROOMS + SW_RESTROOMS + [COPY_ROOM('4')], hand={  # 4112 reaches to 4114; the partition the sheet draws between them is casework
+    '4': dict(pdf='4', label='4', level=4, named=CORES + NE_RESTROOMS + SW_RESTROOMS + [COPY_ROOM('4')], hand={  # 4382's west wall on 4384's
+                    '4382': [[500.0, 1711.1], [461.1, 1715.9], [463.7, 1736.1], [502.4, 1731.4]],  # 4112 reaches to 4114; the partition the sheet draws between them is casework
                     '4112': [[1305.6, 753.4], [1232.2, 771.1], [1237.0, 826.5], [1317.3, 809.5]]},
               manual=[EAST_STAIR],
-              box={'4131', '4184', '4192', '4322', '4360', '4408'}, quad={'4130', '4350', '4355', '4375', '4310'}),
+              box={'4131', '4184', '4192', '4322', '4340', '4360', '4408'}, quad={'4130', '4350', '4355', '4375', '4310'}),
     # Floor 5 is set back: the indoor blocks stand on a paved roof terrace inside the parapet
     # (seeded on its pavers and walkways). The passage between the restroom blocks of the south
     # bar is sealed so the terrace does not run into the building. The oval is the atrium's
@@ -317,7 +326,8 @@ FLOORS = {
               extra=[[1310, 1522, 1342, 1515]],
               # 5370's label sits in the corridor below it, and 5310's fill leaks along the
               # curtain wall: both drawn by hand
-              hand={'5370': [(160, 1000), (393.7, 943.3), (443.7, 1108.3), (218, 1163)],
+              hand={  # 5360 and 5370 square to the facade, their front walls on one line
+                    '5360': [[413.8, 938.4], [578.1, 891.3], [611.8, 1008.9], [447.4, 1055.9]],'5370': [[169.1, 1008.5], [394.2, 944.0], [439.8, 1103.4], [214.8, 1167.9]],
                     '5310': [(1113, 1587), (1243, 1575), (1255, 1783), (1118, 1795)]},
               atrium=(1458, 1236, 126, 226, 71.7)),
 }
@@ -345,6 +355,9 @@ for f in FLOORS.values():
     f.setdefault('unnamed_max', 40000)
     f.setdefault('terrace', [])
     f.setdefault('wings', {})
+    f.setdefault('square', [])
+    f.setdefault('suites', {})
+    f.setdefault('asis', set())
     f.setdefault('blank', [])
     f.setdefault('rename', {})
 

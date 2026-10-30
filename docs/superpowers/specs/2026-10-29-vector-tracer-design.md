@@ -261,3 +261,40 @@ the counts on any floor.
   the list as text (floor, room or map coordinates, note) for an issue or an LLM. The list is
   kept in the browser. The app took the Berkeley B for its mark and the brand palette for the
   categories and highlights.
+
+## Findings from the fifth review (2026-10-30)
+
+- **A suite between rooms.** The recording studio's nine rooms stand around a hall; the hall is
+  the suite: a `manual` region drawn as the convex hull of the rooms and the cores, minus the
+  rooms (4 pt off their walls) and the cores' boxes (the stair, elevators and restroom as one
+  block, the storage room on its own), opened by 8 pt so no sliver is left, simplified to
+  straight lines. `suites` names it and lists a point in each member room, since the members
+  stand around it rather than in it; they take its name, and the map draws the suite lighter
+  and dashed.
+- **Door markers on an edge.** A patch door may name a room; the marker is moved to the nearest
+  point of that room's boundary and turned along it (`snap_doors`, after the rooms are final).
+  The studio's two entrances sit on the hall.
+- **Open areas drawn as given.** The pair-of-rectangles fit at IoU 0.9 put 3190's west corner
+  16 pt off the wall it was drawn on. The fit stays where it works; an area listed in the
+  floor's `asis` is drawn exactly as its patch polygon when the free space fills 95 % of it.
+- **Guided curves.** `guides` in the patch file gives a room three points along its curved
+  wall; the room is clipped to the circle through them (4002's wall side).
+- **The social kitchens.** 2350, 3350 and 4350 take parallel sides pulled in 2 pt and
+  straightened, with the curved ends (the piazza wall, the atrium lobe) fitted as arcs at the
+  piazza tolerances (`kitchen_shape`). The sides follow the neighbouring walls, which are not
+  quite parallel to each other.
+- **Rooms stop at the outline.** Hand polygons and boxed cores could reach past the facade
+  (B1008, B1009, 2345); `clip_entries` cuts every room at the outline after the overlap pass.
+- **The roof deck.** Joined across its pavers, bounded by the `terrace` patch, fenced by
+  `terrace:` patch lines where the paving runs behind a block, rounded 6 pt, kept 2 pt off the
+  walls, the skylight's ellipse cut out. The strip south of (1714, 1009) is walled off and
+  fenced.
+- **Square points.** A Lower Level room whose trace has a jagged tip or stepped side wall is
+  drawn as its minimum rectangle when a `square` point lies in it.
+- **Rooms by hand this round.** 2405 and 3405 on the line of 2401 and 2403; 2310 and 3310
+  square to the building wall; 3112 and 4112 with their wall moved to 3114; 4382 aligned with
+  4384; 5360 and 5370 aligned with each other and the wall; 4130 and 4340 as patch areas
+  parallel to the office rows; a storage room on the Lower Level as a `manual` room east of
+  the hall partition (the marked point lies in the open hall).
+- **Still open.** 2004 and the atrium still meet by 7 pt² (both arcs); the stall rows of the
+  women's restrooms on floors 2 and 4 trace as their own regions.

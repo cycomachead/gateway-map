@@ -310,14 +310,16 @@
  },
  "doors": [
   [
-   2251,
-   784,
-   "Northeast stair"
+   2597,
+   540,
+   "Recording Studio, north entrance",
+   "recording-studio"
   ],
   [
-   2627,
-   981,
-   "Corridor door by B1008"
+   2703,
+   904,
+   "Recording Studio, south entrance",
+   "recording-studio"
   ],
   [
    913,

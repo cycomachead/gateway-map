@@ -42,7 +42,7 @@ const ICON_SIZE = 16;
 
 function renderSpace(space: Space): SVGGElement {
   const g = el('g', {
-    class: `space space--${space.category}`,
+    class: `space space--${space.category}${space.tags?.includes('suite') ? ' space--suite' : ''}`,
     'data-space-id': space.id,
     tabindex: 0,
     role: 'button',

@@ -80,7 +80,10 @@ front), `doors` are points naming the doors to show on the map (the nearest dete
 gets a marker and the name), and `areas` are polygons for rooms the walls do not enclose (open offices, piazzas,
 porches, phone booths), for rooms the walls trace badly (drawn as given, arcs included) and,
 keyed by the ids `floors.py` names them, for cores the hatching hides (a restroom with its
-stalls). A `terrace` area only bounds the roof deck, which is traced from its paver cells. `bootstrap_patches.py <workdir> <floor> --write [--emitted <dir>]`
+stalls). A `terrace` area only bounds the roof deck, which is traced from its paver cells.
+`doors` lists the doors to show (`[x, y, name]`, the detected swing nearest the point; a fourth
+value, a room's id, puts the marker on that room's edge). `guides` gives a room three points
+along its curved wall, and the room is clipped to the circle through them. `bootstrap_patches.py <workdir> <floor> --write [--emitted <dir>]`
 seeds them from the committed level file: areas for the open-plan rooms, booths and `quad`
 rooms, seal lines where a leaked or shared room's level polygon crosses free space, and
 with `--emitted` the named regions whose emitted polygon misses the committed one badly. `preview.py <workdir> <floor> <out.png>`
@@ -160,7 +163,13 @@ draws the trace over the simplified drawing, coloured by parity with the level f
      quarter-circle notch at every door; each swing that opens into a room is added back to
      that room's polygon, so the map treats the doorway as part of the room. Rooms listed in
      the floor's `box` (research labs whose internal lines are benches, not walls) are reduced
-     to their minimum-area bounding rectangle.
+     to their minimum-area bounding rectangle. An open area listed in `asis` (drawn as a few
+     walls in the patch file, which the free space all but fills) is drawn exactly as its
+     patch polygon, since a fitted rectangle would put a corner off the wall it was drawn on.
+     A room with `guides` in the patch file (three points along its curved wall) is clipped to
+     the circle through them. The social kitchens (a `SOCIAL KITCHEN` label on a long trace)
+     have their parallel sides pulled in 2 pt and straightened and their curved ends fitted
+     as arcs (`kitchen_shape`).
    - Labels whose fill still escapes into the corridor network are open areas: the unenclosed
      free space (on the furniture-free raster) is partitioned between them by geodesic
      distance, but each label's open area is only the *furnished* part of its cell, so the
@@ -198,17 +207,22 @@ draws the trace over the simplified drawing, coloured by parity with the level f
    - Floor 5's indoor blocks stand on a paved roof terrace (`terrace` seeds on its pavers and
      walkways). The pavers' hatching chops the deck into cells; the cells joined across their
      strokes are the deck, holes and all (the blocks with their corridors, the skylight), so
-     the terrace stops at the blocks' walls. A `terrace` patch area only bounds it.
+     the terrace stops at the blocks' walls. A `terrace` patch area only bounds it; patch
+     lines noted `terrace:` fence off the strips behind the blocks that the paving joins to
+     the deck. The deck is rounded (6 pt), kept 2 pt off the walls, and the skylight's ellipse
+     (grown by a wall) is cut out of it.
    - Plans that number only the furnished rooms (Lower Level, 1, 5) set `unnamed`: every
      other enclosed region of room size is emitted as an unnumbered room (a rectangle when it
      nearly fills one), leaving out strips along the facades, corridors and pockets inside a
-     room.
+     room. A region holding one of the floor's `square` points is drawn as its minimum
+     rectangle whatever its trace (a jagged tip, a stepped side wall).
    - Rooms whose fill cannot be traced (a label in the corridor, benches drawn as walls, a
      side open to the neighbouring workspace, the tiered lecture halls) are drawn by hand in
      the floor's `hand`, from wall coordinates read off the sheet.
 3. `floors.py` — per-floor configuration: label style, hand seeds, gap-sealing strokes, named
-   regions (identified by a point inside them), hand polygons, boxed rooms, renamed rooms
-   (`rename`, for a room whose use differs from the plan's label), and the similarity transform
+   regions (identified by a point inside them), hand polygons, `manual` rooms drawn whole (a
+   storage room the plan leaves blank, a suite's hall), boxed rooms, renamed rooms
+   (`rename`, for a room whose use differs from the plan's label), `suites`, and the similarity transform
    that registers the Lower Level sheet (drawn at 1/8" = 1' and rotated) onto the upper-floor
    sheets; it was fitted on the six elevator shafts and has a residual below 0.1 pt. Also maps
    the plan's room names to categories and display names.
@@ -237,8 +251,15 @@ draws the trace over the simplified drawing, coloured by parity with the level f
    each border shows.
    Elevator banks are drawn from their shafts' X marks (`bank_cells`): a cell per seed, a
    pitch wide and as deep as the marks, side by side; a stair edge within 30 pt of its bank's
-   edge is put on one line with it (`align_cores`). Doors go out as `DoorSpec`s, the ones the
-   patch file names flagged to be shown. Coordinates are PDF points of the upper-floor sheets,
+   edge is put on one line with it (`align_cores`). After the overlap pass every room is
+   clipped to the outline (`clip_entries`), then pulled in by 1 pt. A suite (`suites`: id →
+   category, name, tags and a point inside each member room) is a `manual` region drawn
+   between or around rooms; the unnumbered rooms whose centre lies in it, or which hold one
+   of the points, take its category and name, and the suite carries the `suite` tag, which
+   the map draws lighter and dashed. Doors go out as `DoorSpec`s, the ones the patch file
+   names flagged to be shown; a door the patch file puts on a room's edge (a fourth value,
+   the room's id) is moved to the nearest point of that room's boundary and turned along it
+   (`snap_doors`), so a suite's entrances sit on the suite as drawn. Coordinates are PDF points of the upper-floor sheets,
    shifted so the building starts near the origin (`frame.ts`); the frame is kept across reruns
    while the building still fits in it (`--reframe` recomputes it).
 

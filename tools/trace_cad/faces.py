@@ -72,6 +72,8 @@ CELL_GAP = 0.6     # pt; extra reach when joining cells (a stroke is 3 pt wide, 
 DECK_CELL = 1500.0 # pt²; faces up to this on a terrace floor may be paver cells of the deck
 WALL = 3.0         # pt; a block standing on the terrace is its rooms plus their walls
 DECK_BLOB = 20000.0 # pt²; an unlabelled region this big inside the terrace is paving, not a room
+DECK_ROUND = 6.0    # pt; the deck's edge is rounded this hard (the cell steps along a walkway go)
+DECK_GAP = 2.0      # pt; and kept this far off the walls
 DESK_SHORT = (9.0, 20.0)
 DESK_LONG = (18.0, 45.0)
 DESK_WIDTH = 0.9
@@ -661,7 +663,7 @@ def doors_of(w, rooms, unl, outlines, wall_tree, segs, scale, mentions=()):
     not into a core, not an entrance), plus the doors the patches mention, which are shown on
     the map. A door is {'a', 'b': the doorway along the wall (hinge to strike, or hinge to
     hinge for a pair of leaves), 'o': where the leaf hinged at a stands open, 'leaves', 'show',
-    'name'}. The strike is the arc end that lies on the walls; the other end is the open leaf."""
+    'name', 'snap': the room whose edge the marker is drawn on}. The strike is the arc end that lies on the walls; the other end is the open leaf."""
     best = {}
     for cx, cy, r, p0, p1 in w['doors']:  # a swing drawn twice (polyline and bézier) counts once
         k = (round(cx / scale), round(cy / scale))
@@ -710,7 +712,7 @@ def doors_of(w, rooms, unl, outlines, wall_tree, segs, scale, mentions=()):
         else:
             doors.append({'a': h1, 'b': s1, 'o': o1, 'leaves': 1, 'passage': p1})
     mid = lambda d: Point((d['a'][0] + d['b'][0]) / 2, (d['a'][1] + d['b'][1]) / 2)
-    for x, y, name in mentions:  # a mentioned door is shown, with its name
+    for x, y, name, *snap in mentions:  # a mentioned door is shown, with its name
         near = min(doors, key=lambda d: mid(d).distance(Point(x, y)), default=None)
         if near is None or mid(near).distance(Point(x, y)) > DOOR_MENTION * scale:
             print(f'  door at ({x}, {y}) {name!r}: no swing within {DOOR_MENTION} pt')
@@ -718,6 +720,8 @@ def doors_of(w, rooms, unl, outlines, wall_tree, segs, scale, mentions=()):
         near['show'] = True
         if name:
             near['name'] = name
+        if snap and snap[0]:  # drawn on the edge of this room (the emitter moves it there)
+            near['snap'] = snap[0]
     out = []
     for d in doors:
         if not (d['passage'] or d.get('show')):
@@ -728,6 +732,8 @@ def doors_of(w, rooms, unl, outlines, wall_tree, segs, scale, mentions=()):
             rec['show'] = True
         if d.get('name'):
             rec['name'] = d['name']
+        if d.get('snap'):
+            rec['snap'] = d['snap']
         out.append(rec)
     return out
 
@@ -772,7 +778,7 @@ RECT_IOU = 0.9         # an open office is one rectangle when that covers it thi
 RECT2_IOU = 0.9        # ... or two rectangles at right angles when they do this well (a looser pair only gets notched by its neighbours)
 OUTLINE_MERGE = 6.0    # deg; a facade's facets turning less than this (and not part of a curve) are one flat wall
 PIAZZA_SMOOTH = 12.0   # pt; a piazza's shape is rounded this hard (notches and bumps up to twice this go)
-PIAZZA_TOL = 3.0       # pt; ... then simplified this loosely ...
+PIAZZA_TOL = 6.0       # pt; ... then simplified this loosely (a tiny arc at a tip goes) ...
 PIAZZA_ARC_TOL = 4.0   # pt; ... and its curves fitted with arcs this loosely ...
 PIAZZA_ARC_DEV = 12.0  # pt; ... kept while they stray at most this far
 
@@ -861,6 +867,52 @@ def merge_facets(poly, deg=OUTLINE_MERGE, curve=12.0, run=3):
     return Polygon(out) if len(out) >= 3 else poly
 
 
+def guided(g, pts):
+    """A room clipped to the circle through three points read off the sheet (the wall's
+    curve), on the side the room's centre lies."""
+    (x1, y1), (x2, y2), (x3, y3) = [p[:2] for p in pts]
+    A = np.array([[2 * x1, 2 * y1, 1], [2 * x2, 2 * y2, 1], [2 * x3, 2 * y3, 1]], float)
+    b = np.array([x1 * x1 + y1 * y1, x2 * x2 + y2 * y2, x3 * x3 + y3 * y3], float)
+    try:
+        cx, cy, c = np.linalg.solve(A, b)
+    except np.linalg.LinAlgError:
+        return g
+    r = math.sqrt(c + cx * cx + cy * cy)
+    disc = Point(cx, cy).buffer(r, 128)
+    cen = g.centroid
+    t = g.intersection(disc) if disc.contains(cen) else g.difference(disc)
+    t = biggest(t) if isinstance(t, MultiPolygon) else t
+    return t if not t.is_empty and t.is_valid else g
+
+
+def kitchen_shape(g, scale):
+    """A social kitchen as the plan reads it: straight parallel sides (the office rows beside
+    it), pulled in a little, and its ends as curves. The sides are the two longest edges
+    after a hard rounding; the room is clipped to the strip between them, moved in 2 pt."""
+    t = smooth_hard(g, scale)
+    sim = t.simplify(3.0 * scale)
+    pts = list(sim.exterior.coords[:-1])
+    edges = sorted(((math.dist(a, b), a, b) for a, b in zip(pts, pts[1:] + pts[:1])), reverse=True)[:2]
+    if len(edges) < 2:
+        return t
+    (_, a1, b1), (_, a2, b2) = edges
+    d1 = np.array(b1) - np.array(a1); d1 /= np.linalg.norm(d1)
+    d2 = np.array(b2) - np.array(a2); d2 /= np.linalg.norm(d2)
+    if d1 @ d2 < 0:
+        d2 = -d2
+    d = d1 + d2; d /= np.linalg.norm(d)
+    n = np.array([-d[1], d[0]])
+    c = np.array(t.centroid.coords[0])
+    o1 = float((np.array(a1) - c) @ n); o2 = float((np.array(a2) - c) @ n)
+    lo, hi = sorted((o1, o2))
+    lo += 2.0 * scale; hi -= 2.0 * scale
+    big = 1e4
+    strip = Polygon([c + n * lo - d * big, c + n * lo + d * big, c + n * hi + d * big, c + n * hi - d * big])
+    r = t.intersection(strip)
+    r = biggest(r) if isinstance(r, MultiPolygon) else r
+    return r if not r.is_empty and r.is_valid and r.area > 0.6 * t.area else t
+
+
 def tidy_open(g, scale, discs):
     """An open-plan area clipped to the free space carries the drafting along its walls (the
     door chords, column bites and mullion boxes) as the building outline does: the same tidy."""
@@ -942,7 +994,9 @@ def build(fid, workdir):
         for lab, part in zip(labs, parts):
             rid = lab['id']
             room = {'id': rid, 'name': lab['name'], 'kind': 'room', 'area': int(part.area),
-                    'polygon': shape(part, scale, quad=rid in cfg['quad'], boxed=rid in cfg['box'])}
+                    'polygon': (ring(kitchen_shape(fill_slits(part, scale), scale), arcs=True, tol=PIAZZA_ARC_TOL, dev=PIAZZA_ARC_DEV, min_iou=0.9)
+                                if 'SOCIAL KITCHEN' in lab['name'].upper() and len(part.exterior.coords) > 12 else
+                                shape(part, scale, quad=rid in cfg['quad'], boxed=rid in cfg['box']))}
             if len(labs) > 1:
                 room['shared'] = [l['id'] for l in labs if l is not lab]
             rooms.append(room)
@@ -1010,7 +1064,13 @@ def build(fid, workdir):
         elif kind == 'open' and rid in cfg['box']:  # an open office that is a plain block
             g = g.minimum_rotated_rectangle
             poly = ring(g)
+        elif kind == 'open' and rid in cfg['asis'] and g.area >= 0.95 * Polygon(flatten(drawn)).area:
+            # an open area drawn as a few walls by hand, which the free space all but fills:
+            # as given (fitted rectangles would put a corner off the wall it was drawn on)
+            poly = [list(pt) for pt in drawn]
         elif kind == 'open' and 'PIAZZA' in lab['name'].upper():
+            if rid in patches['guides']:  # the wall-side curve as given: a circle through three points
+                g = guided(g, patches['guides'][rid])
             # the piazzas are a few curves: rounded hard, kept off the atrium's rail (so the
             # inner curve is the rail's), then arcs fitted loosely
             g = smooth_hard(g, scale)
@@ -1139,6 +1199,11 @@ def build(fid, workdir):
                 deck = deck.intersection(Polygon(flatten(patches['areas']['terrace'])).buffer(0))
             deck = biggest(deck) if isinstance(deck, MultiPolygon) else deck
             deck = tidy_open(deck, scale, discs)
+            # the cell steps along the walkways rounded off, and a small gap kept from the walls
+            rounded = deck.buffer(DECK_ROUND * scale).buffer(-2 * DECK_ROUND * scale).buffer(DECK_ROUND * scale).buffer(-DECK_GAP * scale)
+            rounded = biggest(rounded) if isinstance(rounded, MultiPolygon) else rounded
+            if not rounded.is_empty and rounded.is_valid and rounded.area > 0.8 * deck.area:
+                deck = rounded
             if cfg['atrium']:  # the skylight's panes are cells too: the configured ellipse is cut out
                 deck = biggest(deck.difference(ell.buffer(WALL * scale)))
             paved = prep(deck)
@@ -1146,7 +1211,7 @@ def build(fid, workdir):
             outer = Polygon(deck.exterior)
             room = {'id': 'terrace', 'name': 'ROOF TERRACE', 'kind': 'open', 'area': int(deck.area),
                     'polygon': ring(merge_collinear(valid(outer.simplify(OUTLINE_TOL * scale), outer)),
-                                    arcs=True, tol=OUTLINE_ARC_TOL, dev=OUTLINE_ARC_DEV, min_iou=0.99)}
+                                    arcs=True, tol=PIAZZA_ARC_TOL, dev=PIAZZA_ARC_DEV, min_iou=0.95)}
             holes = [ring(valid(Polygon(h).simplify(SIMPLIFY * scale), Polygon(h))) for h in deck.interiors if Polygon(h).area >= 200]
             if holes:
                 room['holes'] = holes

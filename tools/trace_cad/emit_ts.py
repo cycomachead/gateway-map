@@ -18,7 +18,7 @@ import os
 import re
 import sys
 
-from shapely.geometry import MultiPolygon, Polygon
+from shapely.geometry import MultiPolygon, Point, Polygon
 
 from floors import FLOORS, category, display_name, wing
 
@@ -167,7 +167,8 @@ def emit_floor(fid, d, x0, y0, out_dir):
         if dr.get('name'):
             flags.append(f"name: {ts_str(dr['name'])}")
         return '[' + fmt_poly(to_frame([dr['a'], dr['b'], dr['o']]))[1:-1] + (', { ' + ', '.join(flags) + ' }' if flags else '') + ']'
-    lines.append('export const doors: DoorSpec[] = [' + ', '.join(door_ts(dr) for dr in d.get('doors', [])) + '];')
+    doors_at = len(lines)  # written once the rooms are final: a marker may sit on a room's edge
+    lines.append('')
     lines.append('')
     lines.append('export const rooms: RoomSpec[] = [')
     entries = []  # (priority, wing, id, category, polygon, extra); lower priority keeps its shape
@@ -270,7 +271,8 @@ def emit_floor(fid, d, x0, y0, out_dir):
         extra = with_icon({'name': name, 'label': label, 'tags': tags})
         w = cfg['wings'].get(uid) or wing(uid)
         poly = clip_to(poly, d['outlines'])
-        placed.append(Polygon(xy(poly)).buffer(0))
+        if uid not in cfg['suites']:  # a suite is drawn around rooms, so it takes no space from them
+            placed.append(Polygon(xy(poly)).buffer(0))
         entries.append((1, w, uid, cat, poly, extra))
     moved = align_cores(entries)
     if moved:
@@ -301,7 +303,7 @@ def emit_floor(fid, d, x0, y0, out_dir):
                 continue
             # and a region that fills little of its bounding rectangle is a corridor or a
             # leftover between rooms, not a room
-            if g.area < 0.5 * rw * rh:
+            if g.area < 0.5 * rw * rh and not any(g.contains(Point(*p)) for p in cfg['square']):
                 continue
             # a pocket inside a larger unnamed room (its tables) is part of that room
             if any(o.contains(g.representative_point()) for o in placed):
@@ -318,7 +320,7 @@ def emit_floor(fid, d, x0, y0, out_dir):
                 poly = ell
             elif iou_ell > g.area / (rw * rh):
                 poly = u['polygon']  # round but not an ellipse (the oval with its flat side): the traced curve
-            elif g.area >= 0.75 * rw * rh:
+            elif g.area >= 0.75 * rw * rh or any(g.contains(Point(*p)) for p in cfg['square']):  # a plain box, or one the floor asks for
                 poly = [[float(x), float(y)] for x, y in cv2.boxPoints(cv2.minAreaRect(np.array(xy(u['polygon']), np.float32)))]
             else:
                 poly = tidy_room(u['polygon'])
@@ -340,9 +342,20 @@ def emit_floor(fid, d, x0, y0, out_dir):
         print(f'  floor {fid}: {k} unnumbered rooms')
     n_walls, n_rooms, worst = align_walls(entries, d['outlines'])
     print(f'  floor {fid}: {n_walls} walls of {n_rooms} rooms turned parallel to their neighbours (largest turn {worst:.1f}°)')
+    suited = mark_suites(entries, cfg)
+    if suited:
+        print(f'  floor {fid}: {suited} rooms inside a suite take its name')
     cut = resolve_overlaps(entries)
     print(f'  floor {fid}: {cut} overlaps cut')
+    clipped = clip_entries(entries, d['outlines'])
+    if clipped:
+        print(f'  floor {fid}: {clipped} rooms clipped to the outline')
     print(f'  floor {fid}: {inset_entries(entries)} rooms pulled in by {INSET:g} pt')
+    doors = d.get('doors', [])
+    snapped = snap_doors(doors, entries)
+    if snapped:
+        print(f"  floor {fid}: {snapped} door markers moved onto a room's edge")
+    lines[doors_at] = 'export const doors: DoorSpec[] = [' + ', '.join(door_ts(dr) for dr in doors) + '];'
     for _, w, rid, cat, poly, extra in entries:
         if extra.get('holes'):
             extra = {**extra, 'holes': [to_frame(h) for h in extra['holes']]}
@@ -820,6 +833,112 @@ def inset_entries(entries):
         elif 'holes' in ex2:
             del ex2['holes']
         entries[i] = e[:4] + (new, ex2)
+        n += 1
+    return n
+
+
+def mark_suites(entries, cfg):
+    """A suite (floors.py `suites`: id -> (category, name, tags[, points])) is a named region
+    drawn around or between several rooms: the rooms whose centre lies in it, and the rooms
+    holding one of the points, take the suite's category and name; those inside become its
+    holes; the suite itself carries the 'suite' tag (drawn lighter). Returns the number of
+    rooms taken in."""
+    from shapely.geometry import Point, Polygon
+    from rooms import flatten_arcs
+    n = 0
+    for i, e in enumerate(entries):
+        spec = cfg['suites'].get(e[2])
+        if not spec:
+            continue
+        cat, name, tags, *members = spec
+        points = [Point(p) for p in (members[0] if members else [])]
+        g = Polygon(flatten_arcs(e[4])).buffer(0)
+        holes = []
+        for j, o in enumerate(entries):
+            if j == i or o[0] != 3:  # only the unnumbered rooms join a suite
+                continue
+            og = Polygon(flatten_arcs(o[4])).buffer(0)
+            inside = g.contains(og.representative_point())
+            if not inside and not any(og.contains(q) for q in points):
+                continue
+            extra = dict(o[5]); extra['name'] = name; extra['label'] = ''
+            extra['tags'] = sorted(set(extra.get('tags', [])) | set(tags))
+            entries[j] = (o[0], o[1], o[2], cat, o[4], extra)
+            if inside:
+                holes.append([[round(float(x), 1), round(float(y), 1)] for x, y in og.exterior.coords[:-1]])
+            n += 1
+        extra = dict(e[5]); extra['tags'] = sorted(set(extra.get('tags', [])) | set(tags) | {'suite'})
+        if holes:
+            extra['holes'] = holes
+        entries[i] = (e[0], e[1], e[2], cat, e[4], extra)
+    return n
+
+
+def snap_doors(doors, entries):
+    """A door marker the patches put on a room's edge (`snap`: the room's id) is moved to the
+    point of that room's boundary nearest the doorway and turned along the edge there, so a
+    suite's entrances sit on the suite as drawn. Returns the number moved."""
+    import numpy as np
+    from shapely.geometry import LineString, Point, Polygon
+    from rooms import flatten_arcs
+    n = 0
+    for dr in doors:
+        rid = dr.get('snap')
+        if not rid:
+            continue
+        e = next((e for e in entries if e[2] == rid), None)
+        if e is None:
+            print(f"  door {dr.get('name', '')!r}: no room {rid!r} to sit on")
+            continue
+        ring = Polygon(flatten_arcs(e[4])).exterior
+        a, b, o = (np.array(dr[k], float) for k in 'abo')
+        m = (a + b) / 2
+        p = np.array(ring.interpolate(ring.project(Point(m))).coords[0])
+        coords = np.array(ring.coords)
+        s, t = min(zip(coords[:-1], coords[1:]), key=lambda st: LineString(st).distance(Point(p)))
+        u = t - s
+        u /= np.linalg.norm(u) or 1.0
+        v = b - a
+        v /= np.linalg.norm(v) or 1.0
+        if np.dot(u, v) < 0:
+            u = -u
+        ang = math.atan2(u[1], u[0]) - math.atan2(v[1], v[0])
+        c, sn = math.cos(ang), math.sin(ang)
+        rot = np.array([[c, -sn], [sn, c]])
+        for k, q in (('a', a), ('b', b), ('o', o)):
+            dr[k] = [round(float(x), 1) for x in rot @ (q - m) + p]
+        n += 1
+    return n
+
+
+def clip_entries(entries, outlines):
+    """No room reaches past the building: a polygon that sticks out of the outline by more
+    than a couple of points is cut to it (arcs refitted). Returns the number cut."""
+    from shapely.geometry import MultiPolygon, Polygon
+    from shapely.ops import unary_union
+    from rooms import arcify, flatten_arcs
+    inside = unary_union([Polygon(flatten_arcs(o)).buffer(0) for o in outlines])
+    n = 0
+    for i, e in enumerate(entries):
+        g = Polygon(flatten_arcs(e[4]), [flatten_arcs(h) for h in e[5].get('holes', [])]).buffer(0)
+        if g.is_empty or g.difference(inside).area <= 2.0:
+            continue
+        r = g.intersection(inside)
+        if isinstance(r, MultiPolygon):
+            r = max(r.geoms, key=lambda q: q.area)
+        if r.is_empty or r.geom_type != 'Polygon' or r.area < 0.5 * g.area:
+            continue
+        had_arcs = any(len(p) > 2 and p[2] for p in e[4])
+        ext = [[float(x), float(y)] for x, y in r.simplify(0.3).exterior.coords[:-1]]
+        new = arcify(ext) if had_arcs else ext
+        new = [[round(float(p[0]), 1), round(float(p[1]), 1)] + ([round(float(p[2]), 4)] if len(p) > 2 and p[2] else []) for p in new]
+        extra = dict(e[5])
+        holes = [[[round(float(x), 1), round(float(y), 1)] for x, y in h.coords[:-1]] for h in r.interiors if Polygon(h).area >= 20]
+        if holes:
+            extra['holes'] = holes
+        elif 'holes' in extra:
+            del extra['holes']
+        entries[i] = e[:4] + (new, extra)
         n += 1
     return n
 
