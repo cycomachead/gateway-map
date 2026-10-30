@@ -999,31 +999,12 @@ def build(fid, workdir):
         unl = [u for u in unl if not ell.contains(Point(u['x'], u['y']))]
         c = ell.centroid
         unl.append({'area': int(ell.area), 'atrium': True, 'x': round(c.x, 1), 'y': round(c.y, 1), 'polygon': ring(ell)})
-    # a roof terrace (floor 5): the paved decks holding the configured seeds, one open area
-    # around the indoor blocks (which become its holes)
-    if cfg['terrace'] and 'terrace' in patches['areas']:
-        # the deck as drawn in the patch file; the blocks standing on it (the rooms and
-        # regions inside, with their walls) are its holes
-        drawn = patches['areas']['terrace']
-        deck = Polygon(flatten(drawn)).buffer(0)
-        # the merged paver cells are not regions to name (a block's rooms are far smaller)
-        unl = [u for u in unl if u.get('atrium') or u.get('named') or not (deck.contains(Point(u['x'], u['y'])) and u['area'] > DECK_BLOB * scale * scale)]
-        inside = [Polygon(flatten(r['polygon'])).buffer(0) for r in rooms if deck.contains(Point(Polygon(flatten(r['polygon'])).representative_point()))]
-        inside += [Polygon(flatten(u['polygon'])).buffer(0) for u in unl if deck.contains(Point(u['x'], u['y']))]
-        blocks = unary_union([b.buffer(WALL * scale, join_style='mitre') for b in inside]) if inside else Polygon()
-        room = {'id': 'terrace', 'name': 'ROOF TERRACE', 'kind': 'open', 'area': int(deck.difference(blocks).area), 'polygon': [list(pt) for pt in drawn]}
-        holes = []
-        for b in (blocks.geoms if isinstance(blocks, MultiPolygon) else ([blocks] if not blocks.is_empty else [])):
-            b = b.intersection(deck)
-            for piece in (b.geoms if hasattr(b, 'geoms') else [b]):
-                if piece.area >= 200:
-                    holes.append(ring(piece.simplify(SIMPLIFY * scale)))
-        if holes:
-            room['holes'] = holes
-        rooms.append(room)
-    elif cfg['terrace']:
-        # the pavers' hatching chops the deck into cells: the cells joined across their
-        # strokes form the deck, and a seed on any paver takes the whole deck it stands on
+    # a roof terrace (floor 5): the paved deck around the indoor blocks. The pavers' hatching
+    # chops the deck into cells; the cells joined across their strokes form the deck, holes and
+    # all (the blocks: their rooms, their corridors, the skylight), and a seed on any paver
+    # takes the deck it stands on (a seed on unhatched paving takes that face). A `terrace`
+    # patch area only bounds the deck (the roof edge).
+    if cfg['terrace']:
         reach = BUF * scale + CELL_GAP
         cells = [f for f in faces if id(f) not in ext_ids and f.area < DECK_CELL * scale * scale]
         joined = unary_union([f.buffer(reach) for f in cells]) if cells else Polygon()
@@ -1033,24 +1014,33 @@ def build(fid, workdir):
             p = Point(sx, sy)
             hit = [b for b in blobs if b.contains(p)]
             if hit:
-                decks.append(Polygon(max(hit, key=lambda b: b.area).exterior).buffer(-reach, join_style='mitre'))
+                decks.append(max(hit, key=lambda b: b.area).buffer(-reach, join_style='mitre'))
             else:
                 hit = [f for f in faces if id(f) not in ext_ids and f.contains(p)]
                 if hit:
                     decks.append(min(hit, key=lambda f: f.area))
         if decks:
-            deck = unary_union(decks)
+            # the parts meet across a stroke (the edge between two pavings): joined like the cells
+            deck = unary_union([d.buffer(reach) for d in decks]).buffer(-reach, join_style='mitre')
+            if 'terrace' in patches['areas']:
+                deck = deck.intersection(Polygon(flatten(patches['areas']['terrace'])).buffer(0))
             deck = biggest(deck) if isinstance(deck, MultiPolygon) else deck
-            unl = [u for u in unl if not deck.buffer(reach).contains(Point(u['x'], u['y']))]  # paver cells are not regions to name
-            # the blocks standing on the deck: everything the deck's outer ring encloses but the deck
+            deck = tidy_open(deck, scale, discs)
+            if cfg['atrium']:  # the skylight's panes are cells too: the configured ellipse is cut out
+                deck = biggest(deck.difference(ell.buffer(WALL * scale)))
+            paved = prep(deck)
+            unl = [u for u in unl if not paved.contains(Point(u['x'], u['y']))]  # paver cells are not regions to name
             outer = Polygon(deck.exterior)
-            room = {'id': 'terrace', 'name': 'ROOF TERRACE', 'kind': 'open', 'area': int(deck.area), 'polygon': ring(outer.simplify(SIMPLIFY * scale), arcs=True)}
-            holes = [[[round(float(x), 1), round(float(y), 1)] for x, y in Polygon(h).simplify(SIMPLIFY * scale).exterior.coords[:-1]] for h in deck.interiors if Polygon(h).area >= 200]
+            room = {'id': 'terrace', 'name': 'ROOF TERRACE', 'kind': 'open', 'area': int(deck.area),
+                    'polygon': ring(merge_collinear(valid(outer.simplify(OUTLINE_TOL * scale), outer)),
+                                    arcs=True, tol=OUTLINE_ARC_TOL, dev=OUTLINE_ARC_DEV, min_iou=0.99)}
+            holes = [ring(valid(Polygon(h).simplify(SIMPLIFY * scale), Polygon(h))) for h in deck.interiors if Polygon(h).area >= 200]
             if holes:
                 room['holes'] = holes
             rooms.append(room)
-            for f in decks:
-                ext_ids.add(id(f))  # the deck is not a region to name
+            for f in cells:
+                if paved.contains(f.representative_point()):
+                    ext_ids.add(id(f))  # the deck's cells are not regions to name
     # entrances: door hinges on the outline
     exits = []
     if cfg['exits'] and outlines:

@@ -75,7 +75,7 @@ front), `doors` are points naming the doors to show on the map (the nearest dete
 gets a marker and the name), and `areas` are polygons for rooms the walls do not enclose (open offices, piazzas,
 porches, phone booths), for rooms the walls trace badly (drawn as given, arcs included) and,
 keyed by the ids `floors.py` names them, for cores the hatching hides (a restroom with its
-stalls, the roof terrace). `bootstrap_patches.py <workdir> <floor> --write [--emitted <dir>]`
+stalls). A `terrace` area only bounds the roof deck, which is traced from its paver cells. `bootstrap_patches.py <workdir> <floor> --write [--emitted <dir>]`
 seeds them from the committed level file: areas for the open-plan rooms, booths and `quad`
 rooms, seal lines where a leaked or shared room's level polygon crosses free space, and
 with `--emitted` the named regions whose emitted polygon misses the committed one badly. `preview.py <workdir> <floor> <out.png>`
@@ -191,8 +191,9 @@ draws the trace over the simplified drawing, coloured by parity with the level f
    - Floors 1–3 have stairs winding down inside the atrium's rail, so the opening never closes
      as one region; the floor's `atrium` ellipse replaces the stair pieces inside it.
    - Floor 5's indoor blocks stand on a paved roof terrace (`terrace` seeds on its pavers and
-     walkways). The deck is one open area with the blocks as its holes, its edges line-fitted
-     runs like the outline's.
+     walkways). The pavers' hatching chops the deck into cells; the cells joined across their
+     strokes are the deck, holes and all (the blocks with their corridors, the skylight), so
+     the terrace stops at the blocks' walls. A `terrace` patch area only bounds it.
    - Plans that number only the furnished rooms (Lower Level, 1, 5) set `unnamed`: every
      other enclosed region of room size is emitted as an unnumbered room (a rectangle when it
      nearly fills one), leaving out strips along the facades, corridors and pockets inside a

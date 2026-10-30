@@ -214,3 +214,10 @@ the counts on any floor.
   studio (two seeds, one room), the pits and closets left off the map are `blank` points, a
   room without a number takes its wing from `wings`, and the stair icon and the accessible
   marker are a tag and a POI.
+- **The roof deck is its pavers.** The terrace had been a hand polygon of the whole roof with
+  the rooms as holes, so the blocks' corridors and the space beyond the roof edge were
+  terrace too. The pavers' hatching chops the deck into cells; joined across their strokes
+  they are the deck, holes and all (the blocks with their corridors, the skylight, whose panes
+  are cells as well and is cut out as the configured ellipse), and the terrace stops at the
+  blocks' walls. The patch area only bounds it. Floor 5 also gained its event space, social
+  kitchen and west stair as named regions, 5113 as four walls and 5370 off its neighbour.

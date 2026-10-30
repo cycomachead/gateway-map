@@ -296,13 +296,21 @@ FLOORS = {
     # skylight.
     '5': dict(pdf='5', label='5', level=5, unnamed=2500, unnamed_max=120000,
               named=[n for n in CORES if n is not ATRIUM] + F5_RESTROOMS + [
-                  (1458, 1236, 'skylight', 'circulation', 'Atrium Skylight', 'Skylight', ['atrium', 'skylight'])],
+                  (1458, 1236, 'skylight', 'circulation', 'Atrium Skylight', 'Skylight', ['atrium', 'skylight']),
+                  # the plan numbers only the furnished rooms: the oval event space, the social
+                  # kitchen (its kitchen and its lounge are two faces) and the straight-run
+                  # stair at the west end are named here
+                  (618, 1682, '5300', 'amenity', 'Event Space 5300', '5300', ['event space', 'events']),
+                  ([(1902, 688), (1934, 815)], None, 'social-kitchen', 'amenity', 'Social Kitchen / Working Lounge', 'Social\nKitchen', ['social', 'kitchen', 'working', 'lounge']),
+                  (689, 975, 'west-stair', 'circulation', 'West Stair', 'Stair', ['stairs'])],
+              # 5113's east wall carries a closet: four walls
+              quad={'5113'},
               manual=F5_SINGLE_RESTROOMS,
               terrace=[(1800, 1300), (800, 1900), (1100, 1350), (1210, 1290), (800, 1250), (1300, 1475), (1200, 960), (1400, 1420), (1700, 1000)],
               extra=[[1310, 1522, 1342, 1515]],
               # 5370's label sits in the corridor below it, and 5310's fill leaks along the
               # curtain wall: both drawn by hand
-              hand={'5370': [(160, 1000), (428, 935), (478, 1100), (218, 1163)],
+              hand={'5370': [(160, 1000), (393.7, 943.3), (443.7, 1108.3), (218, 1163)],
                     '5310': [(1113, 1587), (1243, 1575), (1255, 1783), (1118, 1795)]},
               atrium=(1458, 1236, 126, 226, 71.7)),
 }
