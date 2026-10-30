@@ -59,6 +59,15 @@ shortcut either moves focus to the control it acted on (floor button, search box
 reports what happened through the polite live region `#announcer`. The **About** button
 credits the author and the language models that helped build the site.
 
+## Corrections
+
+The **Corrections** button in the header opens a panel for notes to the people maintaining the
+map: **Pick a room** then click rooms on the map, or **Mark a point** (the pencil) and click
+where something is; write what should change and, when a name is involved, whose. **Copy all**
+puts the list on the clipboard (and in a text box) as one line per note, with the floor, the
+room id or the map coordinates, ready for an issue or an LLM. The list lives in the browser's
+local storage until it is cleared.
+
 ## Info dialog
 
 The **Info** button in the header shows `INFO.md` from the repository root: room-numbering

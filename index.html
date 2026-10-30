@@ -2,7 +2,7 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="icon" type="image/svg+xml" href="/berkeley-b.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="description" content="Interactive map of the Gateway building: find rooms, labs, and services by floor." />
     <title>Gateway Map</title>
@@ -11,13 +11,14 @@
     <div class="app">
       <header class="topbar">
         <h1 class="brand">
-          <span class="brand__mark" aria-hidden="true"></span>
+          <img class="brand__mark" src="/berkeley-b.svg" alt="" aria-hidden="true" />
           <span>Gateway Map</span>
         </h1>
         <div id="search" class="topbar__search"></div>
         <div id="filters" class="chips"></div>
         <div class="topbar__actions">
           <button type="button" id="shortcuts-btn" class="ctl ctl--round" aria-label="Keyboard shortcuts" title="Keyboard shortcuts (?)">?</button>
+          <button type="button" id="corrections-btn" class="text-btn" aria-pressed="false">Corrections</button>
           <button type="button" id="info-btn" class="text-btn">Info</button>
           <button type="button" id="about-btn" class="text-btn">About</button>
         </div>
@@ -36,7 +37,10 @@
         <div id="tooltip" class="tooltip" role="status" hidden></div>
       </main>
 
-      <aside id="panel" class="panel" aria-live="polite"></aside>
+      <aside class="panel">
+        <div id="corrections" class="corrections" hidden></div>
+        <div id="panel" aria-live="polite"></div>
+      </aside>
     </div>
 
     <dialog id="shortcuts" class="dialog" aria-labelledby="shortcuts-title"></dialog>

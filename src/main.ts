@@ -17,6 +17,7 @@ import { mountPanel } from './ui/panel';
 import { spaceTitle } from './ui/names';
 import { mountSearchBox } from './ui/search';
 import { mountShortcuts, mountShortcutsDialog } from './ui/shortcuts';
+import { mountCorrections } from './ui/corrections';
 import infoMarkdown from '../INFO.md?raw';
 
 const problems = [
@@ -41,6 +42,8 @@ mountRouting(store);
 
 const floorLabel = (id: string) => building.floors.find((f) => f.id === id)?.label ?? id;
 const panzoom = attachPanZoom(svg);
+// eslint-disable-next-line prefer-const
+let corrections: ReturnType<typeof mountCorrections> | undefined;
 
 // ---- Map ------------------------------------------------------------------
 let mountedFloorId: string | null = null;
@@ -51,6 +54,7 @@ function mountFloor(floorId: string) {
   svg.replaceChildren(renderFloor(building, floor));
   fitFloor(floor);
   mountedFloorId = floorId;
+  corrections?.drawMarks();
 }
 
 function fitFloor(floor: Floor) {
@@ -70,6 +74,7 @@ function syncSpaceClasses(selectedId: string | null, categories: Set<SpaceCatego
 }
 
 svg.addEventListener('click', (e) => {
+  if (corrections?.handleMapClick(e)) return; // picking a room or a point for a correction
   const id = spaceIdFromEvent(e);
   if (id) store.set({ selectedSpaceId: id });
 });
@@ -99,6 +104,7 @@ svg.addEventListener('pointermove', (e) => {
 const floorSwitcher = mountFloorSwitcher($('#floors'), building.floors, store);
 mountFilters($('#filters'), store);
 mountPanel($('#panel'), building, store);
+corrections = mountCorrections($('#corrections'), { button: $<HTMLButtonElement>('#corrections-btn'), store, building, svg, floorLabel });
 mountSearchBox($('#search'), {
   spaces: building.spaces.filter((s) => s.category !== 'circulation'),
   floorLabel,
