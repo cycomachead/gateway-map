@@ -22,6 +22,7 @@
   --c-study: #10b981;
   --c-amenity: #ec4899;
   --c-service: #64748b;
+  --c-copy: #0d9488;
   --c-circulation: #cbd5e1;
 
   --radius: 10px;
@@ -142,6 +143,7 @@ button { font: inherit; color: inherit; }
 .chip--study { --c: var(--c-study); }
 .chip--amenity { --c: var(--c-amenity); }
 .chip--service { --c: var(--c-service); }
+.chip--copy { --c: var(--c-copy); }
 
 .topbar__actions { display: flex; align-items: center; gap: 6px; margin-left: auto; }
 .text-btn {
@@ -189,6 +191,7 @@ button { font: inherit; color: inherit; }
 .space--study { --c: var(--c-study); }
 .space--amenity { --c: var(--c-amenity); }
 .space--service { --c: var(--c-service); }
+.space--copy { --c: var(--c-copy); }
 .space--circulation { --c: var(--c-circulation); }
 .space--circulation .space__shape { fill-opacity: 0.5; stroke: var(--floor-stroke); stroke-dasharray: 4 3; }
 .space--circulation .space__label { font-size: 11px; font-weight: 500; fill: var(--text-muted); }
@@ -289,6 +292,7 @@ button { font: inherit; color: inherit; }
 .swatch--study { --c: var(--c-study); }
 .swatch--amenity { --c: var(--c-amenity); }
 .swatch--service { --c: var(--c-service); }
+.swatch--copy { --c: var(--c-copy); }
 .muted { color: var(--text-muted); padding: 8px 10px; }
 
 /* ---- Dialogs (About, Keyboard shortcuts) ------------------------------- */

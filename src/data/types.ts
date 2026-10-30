@@ -23,6 +23,7 @@ export type SpaceCategory =
   | 'study'
   | 'amenity'
   | 'service'
+  | 'copy'
   | 'circulation';
 
 export const SPACE_CATEGORIES: SpaceCategory[] = [
@@ -35,6 +36,7 @@ export const SPACE_CATEGORIES: SpaceCategory[] = [
   'study',
   'amenity',
   'service',
+  'copy',
   'circulation',
 ];
 
@@ -48,6 +50,7 @@ export const CATEGORY_LABELS: Record<SpaceCategory, string> = {
   study: 'Study spaces',
   amenity: 'Amenities',
   service: 'Services',
+  copy: 'Copy rooms',
   circulation: 'Circulation',
 };
 

@@ -12,9 +12,10 @@ import * as l5 from './gateway/level5';
 import { DEPARTMENTS, RESERVABLE } from './gateway/departments';
 import { OCCUPANTS } from './gateway/occupants';
 import { SHEET_OCCUPANTS } from './gateway/sheet_occupants';
+import { OCCUPANT_FIXES } from './gateway/occupant_fixes';
 import { hearst } from './gateway/streets';
 import { assignDepartments } from './departments';
-import { assignOccupants, mergeOccupants } from './occupants';
+import { assignOccupants, fixOccupants, mergeOccupants } from './occupants';
 import type { Building, Floor, Space } from './types';
 
 /**
@@ -51,7 +52,7 @@ const floors: Floor[] = levels.map(([id, label, level, l]) => ({
 
 const occupied = assignOccupants(
   levels.flatMap(([id, , , l]): Space[] => spacesFrom(id, l.rooms)),
-  mergeOccupants(OCCUPANTS, SHEET_OCCUPANTS),
+  fixOccupants(mergeOccupants(OCCUPANTS, SHEET_OCCUPANTS), OCCUPANT_FIXES),
 );
 const assigned = assignDepartments(occupied.spaces, DEPARTMENTS, RESERVABLE);
 const spaces = assigned.spaces;
