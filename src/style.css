@@ -172,6 +172,8 @@ button { font: inherit; color: inherit; }
 
 .furniture { pointer-events: none; }
 .desk { fill: var(--surface); stroke: var(--floor-stroke); stroke-width: 0.8; stroke-opacity: 0.6; }
+.door__dot { fill: var(--surface); stroke: var(--floor-stroke); stroke-width: 1.2; }
+.door__glyph { fill: none; stroke: var(--text); stroke-width: 1.4; stroke-linecap: round; stroke-linejoin: round; }
 
 .space { cursor: pointer; outline: none; }
 .space__shape {

@@ -1,6 +1,7 @@
 import { pts, type XY } from './helpers';
 import { FLOOR_DEFINITIONS } from './floors';
-import { poisFrom, spacesFrom, type PoiSpec, type RoomSpec } from './gateway/floor';
+import { poisFrom, spacesFrom, type PoiSpec, type RoomSpec, doorsFrom } from './gateway/floor';
+import type { DoorSpec } from './gateway/floor';
 import { FRAME } from './gateway/frame';
 import * as l0 from './gateway/level0';
 import * as l1 from './gateway/level1';
@@ -26,8 +27,8 @@ import type { Building, Floor, Space } from './types';
  * (the names written on the colour-shaded space-assignment plans), and which department a
  * room belongs to from `gateway/departments.ts` (the plans' shading).
  */
-/** What a generated `level*.ts` module exports (`desks` arrived later, so older modules may lack it). */
-type LevelModule = { outline: XY[]; islands: XY[][]; rooms: RoomSpec[]; pois: PoiSpec[]; desks?: XY[][] };
+/** What a generated `level*.ts` module exports (`desks` and `doors` arrived later, so older modules may lack them). */
+type LevelModule = { outline: XY[]; islands: XY[][]; rooms: RoomSpec[]; pois: PoiSpec[]; desks?: XY[][]; doors?: DoorSpec[] };
 
 const levelData = { '0': l0, '1': l1, '2': l2, '3': l3, '4': l4, '5': l5 };
 const levels: ReadonlyArray<readonly [id: string, label: string, level: number, data: LevelModule]> =
@@ -45,6 +46,7 @@ const floors: Floor[] = levels.map(([id, label, level, l]) => ({
   outline: pts(l.outline),
   ...(l.islands.length ? { islands: l.islands.map(pts) } : {}),
   ...(l.desks?.length ? { desks: l.desks.map(pts) } : {}),
+  ...(l.doors?.length ? { doors: doorsFrom(l.doors) } : {}),
 }));
 
 const occupied = assignOccupants(
