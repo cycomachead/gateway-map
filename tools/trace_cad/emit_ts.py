@@ -246,7 +246,7 @@ def emit_floor(fid, d, x0, y0, out_dir):
         if drawn:  # a patch area drawn for this region: as given, a box squared to the walls
             if BOXED_TAGS & set(tags) and axis is not None:
                 poly = turned_to(poly, axis)
-        elif 'atrium' in tags:  # the atrium is an oval: a clean ellipse through its traced outline
+        elif {'atrium', 'oval'} & set(tags):  # an oval room (the atrium, the event space): a clean ellipse through its traced outline
             poly = ellipse_of(poly)
         else:
             if BOXED_TAGS & set(tags):
@@ -746,6 +746,51 @@ def align_cores(entries):
     return moved
 
 
+def shrink_wall(quad, other):
+    """A four-walled polygon pulled off a neighbour it overlaps: the wall the overlap lies
+    along moves inward just past it and the corners are rebuilt, so the room stays four
+    walls instead of getting a notch. None when a wall shift does not clear the overlap or
+    would cost more than a tenth of the room."""
+    import numpy as np
+    from shapely.geometry import Polygon
+    Q = np.array(xy(quad), float)
+    g = Polygon(Q).buffer(0)
+    x = g.intersection(other)
+    if x.is_empty:
+        return g
+    pts = np.array(x.exterior.coords if x.geom_type == 'Polygon' else [c for p in getattr(x, 'geoms', []) if p.geom_type == 'Polygon' for c in p.exterior.coords], float)
+    if len(pts) < 3:
+        return None
+    ccw = 1 if np.cross(Q[1] - Q[0], Q[2] - Q[1]) > 0 else -1
+    best = None
+    for i in range(4):
+        a, b = Q[i], Q[(i + 1) % 4]
+        e = (b - a) / np.linalg.norm(b - a)
+        n = np.array([-e[1], e[0]]) * ccw  # inward normal
+        depth = ((pts - a) @ n).max()      # how far the overlap reaches in from this wall
+        if best is None or depth < best[0]:
+            best = (depth, i)
+    depth, i = best
+    if depth <= 0 or depth > 40:
+        return None
+    a, b = Q[i], Q[(i + 1) % 4]
+    e = (b - a) / np.linalg.norm(b - a)
+    n = np.array([-e[1], e[0]]) * ccw
+    a2, b2 = a + n * (depth + 0.3), b + n * (depth + 0.3)
+
+    def meet(p, d, q, f):
+        t = np.linalg.solve(np.array([d, -f]).T, q - p)[0]
+        return p + t * d
+    prev, nxt = Q[(i - 1) % 4], Q[(i + 2) % 4]
+    new = Q.copy()
+    new[i] = meet(a2, e, prev, a - prev)
+    new[(i + 1) % 4] = meet(a2, e, nxt, b - nxt)
+    r = Polygon(new).buffer(0)
+    if r.is_empty or r.area < 0.9 * g.area or r.intersection(other).area > OVERLAP_MIN:
+        return None
+    return r
+
+
 def resolve_overlaps(entries):
     """Rooms do not overlap. Where two polygons do, the overlap is cut from the one with the
     lower standing: a traced room over an open area or a named region, those over an
@@ -786,7 +831,10 @@ def resolve_overlaps(entries):
                 if arcs[v]:
                     print(f'  overlap of {a[2]} and {b[2]} ({x.area:.1f} pt²) left: both have arcs')
                     continue
-                r = polys[v].difference(polys[o].buffer(0.05))
+                # a four-walled room keeps its four walls: the wall nearest the overlap moves in
+                r = shrink_wall(entries[v][4], polys[o]) if len(entries[v][4]) == 4 and not arcs[v] else None
+                if r is None:
+                    r = polys[v].difference(polys[o].buffer(0.05))
                 if isinstance(r, MultiPolygon):
                     r = max(r.geoms, key=lambda q: q.area)
                 if r.is_empty or r.area < 0.5 * polys[v].area:

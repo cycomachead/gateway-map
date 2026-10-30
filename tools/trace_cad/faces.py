@@ -767,6 +767,21 @@ def shaft_boxes(w, scale):
     return list(boxes.values())
 
 
+PIAZZA_SMOOTH = 12.0   # pt; a piazza's shape is rounded this hard (notches and bumps up to twice this go)
+PIAZZA_TOL = 3.0       # pt; ... then simplified this loosely ...
+PIAZZA_ARC_TOL = 4.0   # pt; ... and its curves fitted with arcs this loosely ...
+PIAZZA_ARC_DEV = 12.0  # pt; ... kept while they stray at most this far
+
+
+def smooth_hard(g, scale):
+    """A shape reduced to a few curves: a round closing then opening at PIAZZA_SMOOTH, which
+    fills the door and column notches, drops the bumps and rounds every corner."""
+    d = PIAZZA_SMOOTH * scale
+    t = g.buffer(d).buffer(-2 * d).buffer(d)
+    t = biggest(t) if isinstance(t, MultiPolygon) else t
+    return t if not t.is_empty and t.is_valid else g
+
+
 def tidy_open(g, scale, discs):
     """An open-plan area clipped to the free space carries the drafting along its walls (the
     door chords, column bites and mullion boxes) as the building outline does: the same tidy."""
@@ -886,7 +901,7 @@ def build(fid, workdir):
     placed = Polygon()
     for lab, f in patched:
         rid = lab['id']
-        kind = 'open' if category(lab['name'], rid) in OPEN_KINDS else 'room'
+        kind = 'open' if category(lab['name'], rid) in OPEN_KINDS or 'PIAZZA' in lab['name'].upper() else 'room'
         drawn = patches['areas'][rid]
         g = Polygon(flatten(drawn)).buffer(0)
         if kind == 'open':  # an open-plan area stops at the walls and at the rooms standing in it
@@ -911,6 +926,14 @@ def build(fid, workdir):
         # clip, without the drafting along its walls and with its curves as arcs
         if kind == 'room' and g.area >= 0.95 * Polygon(flatten(drawn)).area:
             poly = [list(pt) for pt in drawn]
+        elif kind == 'open' and rid in cfg['box']:  # an open office that is a plain block
+            g = g.minimum_rotated_rectangle
+            poly = ring(g)
+        elif kind == 'open' and 'PIAZZA' in lab['name'].upper():
+            # the piazzas are a few curves: rounded hard, then arcs fitted loosely
+            g = smooth_hard(g, scale)
+            poly = ring(merge_collinear(valid(Polygon(g.exterior).simplify(PIAZZA_TOL * scale), Polygon(g.exterior))),
+                        arcs=True, tol=PIAZZA_ARC_TOL, dev=PIAZZA_ARC_DEV, min_iou=0.9)
         elif kind == 'open':
             g = tidy_open(g, scale, discs)
             poly = ring(merge_collinear(valid(Polygon(g.exterior).simplify(OUTLINE_TOL * scale), Polygon(g.exterior))),

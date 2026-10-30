@@ -221,3 +221,22 @@ the counts on any floor.
   are cells as well and is cut out as the configured ellipse), and the terrace stops at the
   blocks' walls. The patch area only bounds it. Floor 5 also gained its event space, social
   kitchen and west stair as named regions, 5113 as four walls and 5370 off its neighbour.
+- **Piazzas are a few curves.** The informal-collab piazzas around the atrium are crescents
+  between the walkway's arc and the glass, and every door chord and column along them had
+  become a vertex. A round closing and opening at 12 pt, then arcs fitted loosely, leave a
+  dozen vertices each; they are study spaces (green) now. Open offices in a floor's `box`
+  set are their minimum rectangle.
+- **Four walls stay four.** Cutting an overlap out of a rectangle left a notch of a few
+  points (5320 against 5310). The wall the overlap lies along now moves in just past it and
+  the corners are rebuilt (`shrink_wall`).
+- **The deck is fenced where the drawing is not.** The paving behind the north block and the
+  north-east offices runs into the central deck without a wall on the sheet, but it is walled
+  off in the building; patch lines across the junctions (the west end of the north block,
+  the strip east of it, the west end of the band, the south parapet band of the arm, the
+  paving west of the central deck) keep the cells apart, and the seeds in those bands are
+  gone. What is left is the deck around the skylight and the walkway to the offices.
+- **Rooms by hand where the sheet misleads.** 3405's front wall on 3403's line, 3310 out to
+  3329's wall, 4112 across the casework to 4114, 1420 as six walls (the entry nook and the
+  strip behind room-9 left out), the floor 1 restrooms with the single-user room between the
+  two multi-stall ones; copy rooms have a category of their own; occupants are corrected by
+  hand in `occupant_fixes.ts` (4115 vacant, two names off 4128).

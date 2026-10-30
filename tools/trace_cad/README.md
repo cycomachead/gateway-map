@@ -58,7 +58,9 @@ Per floor, `gen2.py` runs:
    walls when they cover it, else the simplified face with arcs; walls of neighbouring
    rooms that nearly share a line are put on it. The outline loses the drafting along the
    facade (door chords, mullion boxes, column bumps) before it is simplified and its curves
-   fitted with arcs; an open-plan area's clip is tidied the same way and gets arcs. Desks
+   fitted with arcs; an open-plan area's clip is tidied the same way and gets arcs, a piazza
+   is rounded hard into a few curves, and an open area in the floor's `box` set is its
+   minimum rectangle. Desks
    are kept only in the open areas. Elevator shafts are found by their X marks (two strokes
    of one length crossing at their midpoints) and listed as `shafts`; every door between
    corridors and open areas is listed as `doors` (hinge, strike, open end; pairs of leaves as
@@ -226,7 +228,8 @@ draws the trace over the simplified drawing, coloured by parity with the level f
    so each polygon gives up what a higher-priority one covers (enclosed rooms, then cores and
    named regions, then open areas, then unnumbered rooms), and a last pass (`resolve_overlaps`)
    cuts whatever is left above half a point, hairlines along shared partitions included
-   (between equals the bigger polygon gives way; one with arcs only when the other cannot).
+   (between equals the bigger polygon gives way; one with arcs only when the other cannot);
+   a four-walled room keeps its four walls, the wall along the overlap moving in instead.
    Elevator banks are drawn from their shafts' X marks (`bank_cells`): a cell per seed, a
    pitch wide and as deep as the marks, side by side; a stair edge within 30 pt of its bank's
    edge is put on one line with it (`align_cores`). Doors go out as `DoorSpec`s, the ones the

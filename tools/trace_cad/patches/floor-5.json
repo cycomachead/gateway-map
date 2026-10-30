@@ -1,5 +1,41 @@
 {
- "lines": [],
+ "lines": [
+  [
+   1085,
+   1010,
+   1245,
+   1010,
+   "terrace: the band behind the north block is walled off from the deck"
+  ],
+  [
+   2100,
+   1034,
+   2300,
+   1004,
+   "terrace: the strip between the north block and the north-east offices is walled off from the walkway"
+  ],
+  [
+   1300,
+   629.8921706752541,
+   1300,
+   704.1002545608825,
+   "terrace: the band behind the north block, cut at its west end"
+  ],
+  [
+   2500,
+   1403.682857142857,
+   2500,
+   1595.6033457249073,
+   "terrace: the band along the south parapet of the north-east arm is walled off from the deck"
+  ],
+  [
+   1060,
+   1278.5938303341902,
+   1060,
+   1507.7414364640883,
+   "terrace: the paving west of the central deck is walled off"
+  ]
+ ],
  "areas": {
   "5148": [
    [
