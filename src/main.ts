@@ -204,7 +204,9 @@ store.subscribe((s, prev) => {
 
   if (s.selectedSpaceId && (floorChanged || s.selectedSpaceId !== prev.selectedSpaceId)) {
     const space = building.spaces.find((sp) => sp.id === s.selectedSpaceId);
-    if (space) panzoom.fit(pad(bbox(space.polygon), 120));
+    // A room opened from a link (the first run, `prev === s`) is shown with its surroundings,
+    // so the highlighted room is recognisable in its wing; a click goes in close.
+    if (space) panzoom.fit(pad(bbox(space.polygon), prev === s ? 420 : 120));
   } else if (!s.selectedSpaceId && prev.selectedSpaceId) {
     fitFloor(building.floors.find((f) => f.id === s.floorId)!);
   }

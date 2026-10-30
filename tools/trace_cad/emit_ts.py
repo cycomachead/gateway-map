@@ -48,15 +48,18 @@ def xy(poly):
     return [[float(p[0]), float(p[1])] for p in poly]
 
 
-def box_of(poly):
-    """Bounding rectangle of a polygon aligned with its longest edge (restrooms, elevators
-    and stairs are boxes; a traced region full of fixtures may be blobby, but its longest
-    edge is a wall)."""
+def box_of(poly, axis=None):
+    """Bounding rectangle of a polygon aligned with the walls drawn around it (`axis`, in
+    degrees, from the tracer) or else with its longest edge (restrooms, elevators and stairs
+    are boxes; a traced region full of fixtures may be blobby, but its longest edge is a wall)."""
     import numpy as np
     P = np.array(xy(poly), float)
-    D = np.roll(P, -1, axis=0) - P
-    d = D[np.argmax(np.linalg.norm(D, axis=1))]
-    ang = np.arctan2(d[1], d[0])
+    if axis is not None:
+        ang = math.radians(axis)
+    else:
+        D = np.roll(P, -1, axis=0) - P
+        d = D[np.argmax(np.linalg.norm(D, axis=1))]
+        ang = np.arctan2(d[1], d[0])
     R = np.array([[np.cos(-ang), -np.sin(-ang)], [np.sin(-ang), np.cos(-ang)]])
     Q = P @ R.T
     x0, y0 = Q.min(0)
@@ -66,6 +69,26 @@ def box_of(poly):
 
 
 BOXED_TAGS = {'restroom', 'elevator', 'stairs'}
+TURN_LIMIT = 15.0  # degrees; a hand-drawn box is turned onto the walls' direction when it is this close to it
+
+
+def turned_to(poly, axis, limit=TURN_LIMIT):
+    """A hand-drawn box turned about its centre so its walls run along `axis` (degrees), when
+    it stands within `limit` of that already (a box seeded from a trace a few degrees off
+    the walls). Arcs (bulges) are unchanged by a rotation."""
+    import numpy as np
+    P = np.array(xy(poly), float)
+    D = np.roll(P, -1, axis=0) - P
+    d = D[np.argmax(np.linalg.norm(D, axis=1))]
+    have = math.degrees(math.atan2(d[1], d[0]))
+    turn = (axis - have + 45) % 90 - 45
+    if abs(turn) > limit or abs(turn) < 0.05:
+        return poly
+    c = P.mean(0)
+    t = math.radians(turn)
+    R = np.array([[math.cos(t), -math.sin(t)], [math.sin(t), math.cos(t)]])
+    Q = (P - c) @ R.T + c
+    return [[round(float(x), 1), round(float(y), 1)] + list(p[2:]) for (x, y), p in zip(Q, poly)]
 # the pictogram the map draws above a room's label, by tag (restroom signs)
 ICONS = {'men': 'man', 'women': 'woman', 'all gender': 'all-gender'}
 
@@ -180,19 +203,21 @@ def emit_floor(fid, d, x0, y0, out_dir):
     # merge into a single cluster): split that region between them by nearest point.
     for uid, cat, name, label, tags, points, regions in resolved:
         sharers = [o for o in resolved if len(o[6]) == 1 and len(regions) == 1 and o[6][0] is regions[0]]
+        axis = regions[0].get('axis')  # the walls' direction around the region, from the tracer
         if len(sharers) > 1:
-            parts = split_shared(regions[0]['polygon'], [o[5][0] for o in sharers])
+            parts = split_shared(regions[0]['polygon'], [o[5][0] for o in sharers], d['outlines'], axis)
             poly = parts[[o[0] for o in sharers].index(uid)]
         else:
             poly = regions[0]['polygon'] if len(regions) == 1 else union_polys([r['polygon'] for r in regions])
         drawn = len(regions) == 1 and regions[0].get('named') == uid
-        if drawn:  # a patch area drawn for this region: as given
-            pass
+        if drawn:  # a patch area drawn for this region: as given, a box squared to the walls
+            if BOXED_TAGS & set(tags) and axis is not None:
+                poly = turned_to(poly, axis)
         elif 'atrium' in tags:  # the atrium is an oval: a clean ellipse through its traced outline
             poly = ellipse_of(poly)
         else:
             if BOXED_TAGS & set(tags):
-                poly = box_of(poly)
+                poly = box_of(poly, axis)
             # a box (or a region traced into a doorway) may reach into a neighbour: trim it
             g = Polygon(xy(poly)).buffer(0)
             trimmed = False
@@ -549,17 +574,56 @@ def min_area_rect(points):
     return c, u, L, W
 
 
-def split_shared(poly, points):
+def facade_direction(outlines, at, min_len=100.0):
+    """Unit vector along the straight edge of the building outline nearest to a point: an edge
+    of at least `min_len` (the chords of a flattened curve and the jogs are shorter)."""
+    import numpy as np
+    from rooms import flatten_arcs
+    best = None
+    p = np.array(at, float)
+    for o in outlines:
+        pts = np.array(flatten_arcs(o), float)
+        for i in range(len(pts)):
+            a, b = pts[i], pts[(i + 1) % len(pts)]
+            d = b - a
+            L = np.linalg.norm(d)
+            if L < min_len:
+                continue
+            t = np.clip(np.dot(p - a, d) / (L * L), 0.0, 1.0)
+            dist = np.linalg.norm(a + t * d - p)
+            if best is None or dist < best[0]:
+                best = (dist, d / L)
+    return None if best is None else best[1]
+
+
+def split_shared(poly, points, outlines=(), axis=None):
     """Split a polygon between seed points: the regions that share one polygon are the
     shafts of an elevator bank, so the bank is drawn as equal squares side by side along
-    the bank's long axis (the n-th of the bank's length), one per seed, in the seeds' order
-    along that axis."""
+    the bank's axis (the n-th of the bank's length), one per seed, in the seeds' order
+    along that axis. The axis is the direction of the shaft walls (`axis`, from the tracer;
+    the X marks on the shafts make the traced region's own rectangle unreliable), else that
+    of the nearest straight facade, which the shafts stand parallel to, else the region's
+    long axis."""
     import numpy as np
-    c, u, L, _ = min_area_rect(xy(poly))
+    P = np.array(xy(poly), float)
+    S = np.array(points, float)
+    if axis is not None:
+        u = np.array([math.cos(math.radians(axis)), math.sin(math.radians(axis))])
+    else:
+        u = facade_direction(outlines, P.mean(0)) if outlines else None
+    if u is None:
+        c, u, L, _ = min_area_rect(xy(poly))
+    else:
+        v = np.array([-u[1], u[0]])
+        if len(S) > 1 and np.ptp(S @ v) > np.ptp(S @ u):  # the seeds spread across the facade: the bank stands end-on
+            u, v = v, -u
+        a, b = P @ u, P @ v
+        L = a.max() - a.min()
+        c = u * (a.max() + a.min()) / 2 + v * (b.max() + b.min()) / 2
     v = np.array([-u[1], u[0]])
     n = len(points)
     side = L / n
-    along = (np.array(points, float) - c) @ u
+    along = (S - c) @ u
     cells = {}
     for rank, i in enumerate(np.argsort(along)):
         cc = c + u * ((rank - (n - 1) / 2) * side)

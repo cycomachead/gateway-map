@@ -50,9 +50,16 @@ Per floor, `gen2.py` runs:
 3. `faces.py` — paints the strokes 3 pt wide, subtracts them from the plan border and takes
    each piece of free space as a face (holes filled, so furniture never cuts a room). The
    face holding a room number is that room; faces without a label are listed as unlabelled
-   regions for `floors.py`'s `named` seeds; the outside face gives the outline. Labels in
-   the corridor network are open-plan areas and come from the patch file. Writes
-   `<pdf>_rooms.json`, which `emit_ts.py` reads as before.
+   regions for `floors.py`'s `named` seeds, each with the direction of the walls drawn
+   around it (`axis`, for the emitter to square the cores to); the outside face gives the
+   outline. Labels in the corridor network are open-plan areas and come from the patch
+   file. A room's shape: slits (a stroke poking in) and column bites filled, a furnished
+   pocket (casework behind a single line) absorbed, the minimum rectangle or four fitted
+   walls when they cover it, else the simplified face with arcs; walls of neighbouring
+   rooms that nearly share a line are put on it. The outline loses the drafting along the
+   facade (door chords, mullion boxes, column bumps) before it is simplified and its curves
+   fitted with arcs. Desks are kept only in the open areas. Writes `<pdf>_rooms.json`,
+   which `emit_ts.py` reads as before.
 4. `compare.py` — every numbered room of the committed `level*.ts` against the trace, as
    IoU counts at 0.95 / 0.9 / 0.8 and the rooms below 0.8. A change to the tracer may not
    lower the counts on any floor.

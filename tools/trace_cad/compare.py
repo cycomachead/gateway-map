@@ -76,7 +76,28 @@ def report(workdir, fid, show_all=False):
     worst = sorted((x for x in rows if x[3] is None and x[2] == 'missing' or (x[3] is not None and x[3] < 0.8)), key=lambda x: (x[3] is not None, x[3] or 0))
     for x in (rows if show_all else worst):
         print(f"    {x[0]:7} {x[1]:10} {x[2]:8} {'' if x[3] is None else f'{x[3]:.3f}'}")
+    # the outline: overlap and the furthest point from the committed one (the facades' arcs
+    # are flattened on both sides), with the vertex and arc counts
+    committed = read_outline(fid)
+    if committed is not None and traced['outlines']:
+        ref = Polygon([to_sheet(x, y) for x, y in flatten(committed)]).buffer(0)
+        o = traced['outlines'][0]
+        g = Polygon(flatten(o)).buffer(0)
+        print(f"  outline: IoU {g.intersection(ref).area / g.union(ref).area:.4f}, furthest {g.hausdorff_distance(ref):.1f} pt from the committed one, "
+              f"{len(o)} vertices ({sum(len(p) > 2 for p in o)} arcs) vs {len(committed)} ({sum(len(p) > 2 for p in committed)} arcs)")
     return rows
+
+
+def read_outline(fid):
+    """The committed outline of a level, in frame coordinates (vertices may carry a bulge)."""
+    import levels
+    path = os.path.join(levels.GATEWAY, f'level{fid}.ts')
+    if not os.path.exists(path):
+        return None
+    for line in open(path):
+        if line.startswith('export const outline'):
+            return json.loads(levels._ts_to_json(line.split('=', 1)[1].rstrip().rstrip(';')))
+    return None
 
 
 if __name__ == '__main__':

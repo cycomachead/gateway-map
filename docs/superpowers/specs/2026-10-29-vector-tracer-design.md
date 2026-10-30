@@ -142,4 +142,37 @@ the counts on any floor.
 - **Known differences from the level files** (the trace is right or the question is open):
   3346's committed polygon is an axis-aligned square the sheet does not show; 3112's label
   stands in the small room beside the one the level file calls 3112; 2111 is split by a thin
-  desk panel drawn from wall to door; 3111's desk return pocket.
+  desk panel drawn from wall to door; 4382's seating strip and 4384's missing third.
+
+## Findings from the first review (2026-10-29)
+
+- **Slits and bites.** A single stroke poking into a room (a wall line overshooting its
+  corner, a leader) left a slit in the polygon, a column standing in the wall a round bite.
+  A mitred closing of a stroke's width fills the slits (`CLOSE`); the bites are filled only
+  within the column's disc (`BITE`), so a doorway recess of the same width stays.
+- **Pockets hold furniture.** Pocket absorption had never fired: the hole-filled exterior
+  face touches everything, so every pocket "touched the outside". With that fixed, the
+  casework strip behind 3346 and 3348 joined its rooms and the rear wall of the row fell
+  into line, but empty cavities (a wedge behind 3111's partition) joined too. A pocket now
+  has to hold furniture (a quad or a furniture-flagged stroke).
+- **Rows share lines.** Every rectangle was fitted on its own, so a row of offices came out
+  a few tenths of a point and of a degree apart. Walls of different rooms that face the same
+  way, run within 1° and lie within 1.5 pt of one line are put on their common line
+  (`align_walls`); the emitter's parallel-walls pass then has less to do.
+- **The outline is the facade, not the drafting on it.** Door chords, mullion boxes (13 pt
+  wide, 2.5 pt deep) and overshooting lines made the facades zigzag and the arcs fail their
+  check. A mitred closing and opening at 8 pt drop them, but only the jogs: pieces nowhere
+  wider than 16 pt, no longer than 60 pt, touching one piece of the building and closing no
+  court (a thin channel along the Hearst canopy would otherwise be filled and the canopy
+  joined to the building). Column bumps go within their discs. The outline is then
+  simplified at 1.5 pt and its curves fitted with arcs checked at 6 pt (not 2: the building
+  is 3,000 pt across). Floor 3: 61 vertices with arcs instead of 473 without.
+- **Desks only in the open.** The old tracer drew desks where they stood on an open area;
+  the first vector version drew every desk-sized quad, including the ones in offices.
+- **Cores square to their walls.** The region of an elevator bank is chopped by the X marks
+  and a restroom's by its stalls, so a rectangle fitted to the region (or seeded from the
+  old trace) could sit 10° off the walls. The tracer now records the length-weighted
+  direction of the wall strokes around every unlabelled region (`axis`, modulo 90°; the
+  diagonals cancel) and the emitter boxes the cores along it, turns a hand-drawn core box
+  onto it when within 15°, and splits an elevator bank along it. On floor 3 both banks come
+  out within 0.3° of their facades, which is what the drawing shows.
