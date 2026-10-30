@@ -54,7 +54,7 @@ const GROUPS: Group[] = [
     title: 'Floors',
     bindings: [
       { show: ['1', '…', '5'], sep: ' ', action: 'Go to floors 1 to 5' },
-      { show: ['B'], letter: true, action: 'Go to the Lower Level' },
+      { show: ['B', 'L'], letter: true, action: 'Go to the Lower Level' },
     ],
   },
 ];
@@ -62,6 +62,7 @@ const GROUPS: Group[] = [
 /** Single-letter shortcuts, the ones the "require Shift" preference applies to. */
 const LETTERS: Record<string, (a: ShortcutActions) => void> = {
   b: (a) => a.goToFloor('0'),
+  l: (a) => a.goToFloor('0'),
 };
 
 const ARROWS: Record<string, Direction> = { ArrowUp: 'up', ArrowDown: 'down', ArrowLeft: 'left', ArrowRight: 'right' };

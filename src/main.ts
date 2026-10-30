@@ -12,10 +12,12 @@ import { announce } from './ui/announce';
 import { openDialog, setupDialog } from './ui/dialog';
 import { mountFilters } from './ui/filters';
 import { mountFloorSwitcher } from './ui/floors';
+import { renderMarkdown } from './ui/markdown';
 import { mountPanel } from './ui/panel';
 import { spaceTitle } from './ui/names';
 import { mountSearchBox } from './ui/search';
 import { mountShortcuts, mountShortcutsDialog } from './ui/shortcuts';
+import infoMarkdown from '../INFO.md?raw';
 
 const problems = [
   ...validateBuilding(building),
@@ -115,11 +117,18 @@ $('#zoom-fit').addEventListener('click', () => {
 });
 
 // ---- Dialogs and keyboard shortcuts ----------------------------------------
+const infoDialog = $<HTMLDialogElement>('#info');
 const aboutDialog = $<HTMLDialogElement>('#about');
 const shortcutsDialog = $<HTMLDialogElement>('#shortcuts');
+setupDialog(infoDialog);
 setupDialog(aboutDialog);
 setupDialog(shortcutsDialog);
+// The Info dialog is INFO.md at the repository root, rendered at build time.
+const info = renderMarkdown(infoMarkdown);
+if (info.title) $('#info-title').textContent = info.title;
+$('#info-body').innerHTML = info.html;
 const help = mountShortcutsDialog(shortcutsDialog);
+$('#info-btn').addEventListener('click', () => openDialog(infoDialog));
 $('#about-btn').addEventListener('click', () => openDialog(aboutDialog));
 $('#shortcuts-btn').addEventListener('click', help.toggle);
 $('#about-shortcuts').addEventListener('click', () => {

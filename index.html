@@ -18,6 +18,7 @@
         <div id="filters" class="chips"></div>
         <div class="topbar__actions">
           <button type="button" id="shortcuts-btn" class="ctl ctl--round" aria-label="Keyboard shortcuts" title="Keyboard shortcuts (?)">?</button>
+          <button type="button" id="info-btn" class="text-btn">Info</button>
           <button type="button" id="about-btn" class="text-btn">About</button>
         </div>
       </header>
@@ -39,6 +40,14 @@
     </div>
 
     <dialog id="shortcuts" class="dialog" aria-labelledby="shortcuts-title"></dialog>
+
+    <dialog id="info" class="dialog" aria-labelledby="info-title">
+      <h2 id="info-title" class="dialog__title">Info</h2>
+      <div id="info-body" class="dialog__body"></div>
+      <div class="dialog__actions">
+        <button type="button" class="btn" data-close>Close</button>
+      </div>
+    </dialog>
 
     <dialog id="about" class="dialog" aria-labelledby="about-title">
       <h2 id="about-title" class="dialog__title">About Gateway Map</h2>
