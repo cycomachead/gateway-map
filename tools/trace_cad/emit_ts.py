@@ -342,6 +342,7 @@ def emit_floor(fid, d, x0, y0, out_dir):
     print(f'  floor {fid}: {n_walls} walls of {n_rooms} rooms turned parallel to their neighbours (largest turn {worst:.1f}°)')
     cut = resolve_overlaps(entries)
     print(f'  floor {fid}: {cut} overlaps cut')
+    print(f'  floor {fid}: {inset_entries(entries)} rooms pulled in by {INSET:g} pt')
     for _, w, rid, cat, poly, extra in entries:
         if extra.get('holes'):
             extra = {**extra, 'holes': [to_frame(h) for h in extra['holes']]}
@@ -789,6 +790,38 @@ def shrink_wall(quad, other):
     if r.is_empty or r.area < 0.9 * g.area or r.intersection(other).area > OVERLAP_MIN:
         return None
     return r
+
+
+INSET = 1.0  # pt; every room is drawn this far inside its boundary, so neighbours never touch and each border shows
+
+
+def inset_entries(entries):
+    """Every room pulled in by INSET (holes pushed out by as much), arcs refitted where the
+    room had them. A room that would lose half of itself is left alone. Returns the count."""
+    from shapely.geometry import MultiPolygon, Polygon
+    from rooms import arcify, flatten_arcs
+    n = 0
+    for i, e in enumerate(entries):
+        poly, extra = e[4], e[5]
+        had_arcs = any(len(p) > 2 and p[2] for p in poly)
+        g = Polygon(flatten_arcs(poly), [flatten_arcs(h) for h in extra.get('holes', [])]).buffer(0)
+        r = g.buffer(-INSET, join_style='mitre', mitre_limit=3.0)
+        if isinstance(r, MultiPolygon):
+            r = max(r.geoms, key=lambda q: q.area)
+        if r.is_empty or r.geom_type != 'Polygon' or r.area < 0.5 * g.area:
+            continue
+        ext = [[float(x), float(y)] for x, y in r.exterior.coords[:-1]]
+        new = arcify(ext) if had_arcs else ext
+        new = [[round(float(p[0]), 1), round(float(p[1]), 1)] + ([round(float(p[2]), 4)] if len(p) > 2 and p[2] else []) for p in new]
+        ex2 = dict(extra)
+        holes = [[[round(float(x), 1), round(float(y), 1)] for x, y in h.coords[:-1]] for h in r.interiors if Polygon(h).area >= 20]
+        if holes:
+            ex2['holes'] = holes
+        elif 'holes' in ex2:
+            del ex2['holes']
+        entries[i] = e[:4] + (new, ex2)
+        n += 1
+    return n
 
 
 def resolve_overlaps(entries):

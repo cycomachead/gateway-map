@@ -767,6 +767,10 @@ def shaft_boxes(w, scale):
     return list(boxes.values())
 
 
+PIAZZA_GAP = 8.0       # pt; a piazza stops this far short of the atrium's rail
+RECT_IOU = 0.9         # an open office is one rectangle when that covers it this well ...
+RECT2_IOU = 0.9        # ... or two rectangles at right angles when they do this well (a looser pair only gets notched by its neighbours)
+OUTLINE_MERGE = 6.0    # deg; a facade's facets turning less than this (and not part of a curve) are one flat wall
 PIAZZA_SMOOTH = 12.0   # pt; a piazza's shape is rounded this hard (notches and bumps up to twice this go)
 PIAZZA_TOL = 3.0       # pt; ... then simplified this loosely ...
 PIAZZA_ARC_TOL = 4.0   # pt; ... and its curves fitted with arcs this loosely ...
@@ -780,6 +784,81 @@ def smooth_hard(g, scale):
     t = g.buffer(d).buffer(-2 * d).buffer(d)
     t = biggest(t) if isinstance(t, MultiPolygon) else t
     return t if not t.is_empty and t.is_valid else g
+
+
+def rectangles(g, scale):
+    """An open office as one rectangle, or as two at right angles (an L, a T) when that covers
+    it at RECT_IOU: desks stand in blocks, and the odd angles of a clipped area are the
+    corridor's, not the room's. None when neither fits."""
+    from shapely.ops import split
+    rect = g.minimum_rotated_rectangle
+    if rect.geom_type != 'Polygon':
+        return None
+    iou = lambda a, b: a.intersection(b).area / a.union(b).area
+    if iou(rect, g) >= RECT_IOU:
+        return rect
+    pts = np.array(rect.exterior.coords[:4])
+    u = pts[1] - pts[0]
+    u = u / np.linalg.norm(u)
+    v = np.array([-u[1], u[0]])
+    P = np.array(g.exterior.coords)
+
+    def framed_box(part):
+        Q = np.array(part.exterior.coords)
+        qa, qb = Q @ u, Q @ v
+        return Polygon([u * qa.min() + v * qb.min(), u * qa.max() + v * qb.min(), u * qa.max() + v * qb.max(), u * qa.min() + v * qb.max()])
+    best = (RECT2_IOU, None)
+    c0 = np.array(g.centroid.coords[0])
+    for axis, other in ((u, v), (v, u)):
+        proj = P @ axis
+        lo, hi = proj.min(), proj.max()
+        for t in np.linspace(0.15, 0.85, 15):
+            c = lo + t * (hi - lo)
+            mid = axis * c + other * (c0 @ other)
+            cutter = LineString([mid + other * 1e4, mid - other * 1e4])
+            parts = [p for p in split(g, cutter).geoms if p.area > 1]
+            sides = [[p for p in parts if (np.array(p.representative_point().coords[0]) @ axis) < c], [p for p in parts if (np.array(p.representative_point().coords[0]) @ axis) >= c]]
+            if not sides[0] or not sides[1]:
+                continue
+            boxes = unary_union([framed_box(unary_union(side).convex_hull).buffer(0.3, join_style='mitre') for side in sides]).buffer(-0.3, join_style='mitre')
+            if boxes.geom_type != 'Polygon':
+                continue
+            score = iou(boxes, g)
+            if score > best[0]:
+                best = (score, boxes)
+    return best[1]
+
+
+def merge_facets(poly, deg=OUTLINE_MERGE, curve=12.0, run=3):
+    """A facade drawn as facets a few degrees apart is one flat wall: vertices turning less
+    than `deg` are dropped, except inside a curve, a run of at least `run` turns the same way
+    each under `curve` degrees, which the arc fit needs whole."""
+    pts = list(poly.exterior.coords[:-1])
+    n = len(pts)
+    if n < 5:
+        return poly
+    turns = []
+    for i in range(n):
+        p, q, r = np.array(pts[i - 1]), np.array(pts[i]), np.array(pts[(i + 1) % n])
+        a, b = q - p, r - q
+        na, nb = np.linalg.norm(a), np.linalg.norm(b)
+        if na < 1e-9 or nb < 1e-9:
+            turns.append(0.0)
+            continue
+        ang = math.degrees(math.atan2(a[0] * b[1] - a[1] * b[0], np.dot(a, b)))
+        turns.append(ang)
+    in_curve = [False] * n
+    for i in range(n):
+        sgn = 1 if turns[i] > 0 else -1
+        j, k = i, 0
+        while k < n and abs(turns[j % n]) < curve and abs(turns[j % n]) > 0.3 and (1 if turns[j % n] > 0 else -1) == sgn:
+            j += 1
+            k += 1
+        if k >= run:
+            for m in range(i, j):
+                in_curve[m % n] = True
+    out = [pts[i] for i in range(n) if in_curve[i] or abs(turns[i]) >= deg]
+    return Polygon(out) if len(out) >= 3 else poly
 
 
 def tidy_open(g, scale, discs):
@@ -899,6 +978,7 @@ def build(fid, workdir):
     # in the corridor network, a booth whose label stands outside its open front), minus the
     # rooms already placed. Open-plan kinds carry the 'open plan' tag; a booth is a room.
     placed = Polygon()
+    ell_atrium = atrium_polygon(cfg)  # the piazzas keep off it
     for lab, f in patched:
         rid = lab['id']
         kind = 'open' if category(lab['name'], rid) in OPEN_KINDS or 'PIAZZA' in lab['name'].upper() else 'room'
@@ -924,24 +1004,34 @@ def build(fid, workdir):
                     del r['holes']
         # a room drawn by hand keeps its vertices (and arcs) as given; an open area takes the
         # clip, without the drafting along its walls and with its curves as arcs
+        g_holes = g  # the rooms standing in an open area stay its holes whatever shape it takes
         if kind == 'room' and g.area >= 0.95 * Polygon(flatten(drawn)).area:
             poly = [list(pt) for pt in drawn]
         elif kind == 'open' and rid in cfg['box']:  # an open office that is a plain block
             g = g.minimum_rotated_rectangle
             poly = ring(g)
         elif kind == 'open' and 'PIAZZA' in lab['name'].upper():
-            # the piazzas are a few curves: rounded hard, then arcs fitted loosely
+            # the piazzas are a few curves: rounded hard, kept off the atrium's rail (so the
+            # inner curve is the rail's), then arcs fitted loosely
             g = smooth_hard(g, scale)
+            if ell_atrium is not None:
+                g = biggest(g.difference(ell_atrium.buffer(PIAZZA_GAP * scale)))
             poly = ring(merge_collinear(valid(Polygon(g.exterior).simplify(PIAZZA_TOL * scale), Polygon(g.exterior))),
                         arcs=True, tol=PIAZZA_ARC_TOL, dev=PIAZZA_ARC_DEV, min_iou=0.9)
         elif kind == 'open':
             g = tidy_open(g, scale, discs)
-            poly = ring(merge_collinear(valid(Polygon(g.exterior).simplify(OUTLINE_TOL * scale), Polygon(g.exterior))),
-                        arcs=True, tol=OUTLINE_ARC_TOL, dev=OUTLINE_ARC_DEV, min_iou=0.99)
+            g_holes = g
+            blocks = rectangles(Polygon(g.exterior), scale)
+            if blocks is not None:  # desks stand in blocks: one rectangle, or two at right angles
+                g = blocks
+                poly = ring(merge_collinear(g.simplify(0.3)))
+            else:
+                poly = ring(merge_collinear(valid(Polygon(g.exterior).simplify(OUTLINE_TOL * scale), Polygon(g.exterior))),
+                            arcs=True, tol=OUTLINE_ARC_TOL, dev=OUTLINE_ARC_DEV, min_iou=0.99)
         else:
             poly = ring(g)
         room = {'id': rid, 'name': lab['name'], 'kind': kind, 'area': int(g.area), 'polygon': poly}
-        holes = [[[round(float(x), 1), round(float(y), 1)] for x, y in h.coords[:-1]] for h in g.interiors if Polygon(h).area >= 20]
+        holes = [[[round(float(x), 1), round(float(y), 1)] for x, y in h.coords[:-1]] for h in g_holes.interiors if Polygon(h).area >= 20]
         if holes and kind == 'open':
             room['holes'] = holes
         rooms.append(room)
@@ -958,8 +1048,8 @@ def build(fid, workdir):
     room_points = [Point(Polygon(flatten(r['polygon'])).representative_point()) for r in rooms if len(r['polygon']) >= 3]
     pieces = [p for p in pieces if p.area >= max_room / 10 and any(p.contains(q) for q in room_points)]
     # a fine tolerance keeps the corners and leaves the curved facades enough vertices for arcs
-    outlines = [ring(merge_collinear(valid(biggest(Polygon(p.exterior).simplify(OUTLINE_TOL * scale)), Polygon(p.exterior))),
-                     arcs=True, tol=OUTLINE_ARC_TOL, dev=OUTLINE_ARC_DEV, min_iou=0.995) for p in pieces]
+    outlines = [ring(merge_facets(merge_collinear(valid(biggest(Polygon(p.exterior).simplify(OUTLINE_TOL * scale)), Polygon(p.exterior)))),
+                     arcs=True, tol=OUTLINE_ARC_TOL, dev=OUTLINE_ARC_DEV, min_iou=0.99) for p in pieces]
     # faces nobody labelled: cores, restrooms, stairs, closets, for floors.py's `named` list
     labelled = set(owners)
     min_room = cfg['min_room'] if 'min_room' in cfg else MIN_ROOM * scale * scale  # a configured minimum is in the sheet's own points

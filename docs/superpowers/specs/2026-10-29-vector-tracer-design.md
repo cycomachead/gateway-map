@@ -240,3 +240,24 @@ the counts on any floor.
   strip behind room-9 left out), the floor 1 restrooms with the single-user room between the
   two multi-stall ones; copy rooms have a category of their own; occupants are corrected by
   hand in `occupant_fixes.ts` (4115 vacant, two names off 4128).
+
+## Findings from the fourth review (2026-10-30)
+
+- **Piazzas keep off the atrium.** Rounded hard, a piazza could still lap the atrium's rail;
+  the atrium ellipse grown by 8 pt is cut out of every piazza, so the inner edge is the rail's
+  own curve, a step back.
+- **Open offices are rectangles.** Desks stand in blocks, and the odd angles of an area
+  clipped to the free space are the corridor's; an open office is one rectangle when that
+  covers it at IoU 0.9, else the best pair of rectangles at right angles (a cut along either
+  axis of the minimum rectangle, each side's box) at 0.85, else the tidied shape.
+- **Facades are flat walls.** The Hearst facade is drawn as facets two to five degrees apart;
+  `merge_facets` drops the vertices between them unless they belong to a curve (a run of
+  three or more turns the same way), which the arc fit then takes.
+- **Every room pulled in by a point.** Neighbours no longer touch and every border shows; the
+  inset runs last in the emitter, arcs refitted, so the parity gate (which reads the trace)
+  is not affected.
+- **Corrections from the map.** A Corrections panel in the app collects notes: pick a room or
+  mark a point with the pencil, write what should change and whose name is involved, copy
+  the list as text (floor, room or map coordinates, note) for an issue or an LLM. The list is
+  kept in the browser. The app took the Berkeley B for its mark and the brand palette for the
+  categories and highlights.

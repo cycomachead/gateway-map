@@ -238,8 +238,8 @@ FLOORS = {
               quad={'B1040H'}),
     # The covered plaza between the Southwest block and the main building is outside.
     '1': dict(pdf='1', label='1', level=1, exterior=[(960, 1600)], exits=True, unnamed=2500, atrium=(1499, 1219, 128, 185, 80.5),
-              # a sliver on the stair landing by the Northeast elevators
-              blank=[(1610, 959)],
+              # a sliver on the stair landing by the Northeast elevators, a closet by the Northeast core
+              blank=[(1610, 959), (2266, 826)],
               manual=[EAST_STAIR, *SW_BLOCK_RESTROOMS],
               # the plan's "Project Rm." 1456 is the TA printer room; 1110 (an "open office" on
               # the plan) is a four-walled reservable meeting room like 1110A/B beside it
@@ -294,7 +294,7 @@ FLOORS = {
     '4': dict(pdf='4', label='4', level=4, named=CORES + NE_RESTROOMS + SW_RESTROOMS + [COPY_ROOM('4')], hand={  # 4112 reaches to 4114; the partition the sheet draws between them is casework
                     '4112': [[1305.6, 753.4], [1232.2, 771.1], [1237.0, 826.5], [1317.3, 809.5]]},
               manual=[EAST_STAIR],
-              box={'4131', '4184', '4192', '4408', '4322'}, quad={'4130', '4350', '4355', '4375', '4310'}),
+              box={'4131', '4184', '4192', '4322', '4360', '4408'}, quad={'4130', '4350', '4355', '4375', '4310'}),
     # Floor 5 is set back: the indoor blocks stand on a paved roof terrace inside the parapet
     # (seeded on its pavers and walkways). The passage between the restroom blocks of the south
     # bar is sealed so the terrace does not run into the building. The oval is the atrium's
