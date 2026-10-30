@@ -231,11 +231,11 @@ def emit_floor(fid, d, x0, y0, out_dir):
                 poly = [[float(x), float(y)] for x, y in g.simplify(0.3).exterior.coords[:-1]]
         placed.append(Polygon(xy(poly)).buffer(0))
         extra = with_icon({'name': name, 'label': label, 'tags': tags})
-        w = wing(uid) or ('Northeast' if uid.startswith('ne-') else 'Southwest' if uid.startswith('sw-') else None)
+        w = cfg['wings'].get(uid) or wing(uid) or ('Northeast' if uid.startswith('ne-') else 'Southwest' if uid.startswith('sw-') else None)
         entries.append((1, w, uid, cat, poly, extra))
     for uid, cat, name, label, tags, poly in cfg['manual']:
         extra = with_icon({'name': name, 'label': label, 'tags': tags})
-        w = wing(uid)
+        w = cfg['wings'].get(uid) or wing(uid)
         poly = clip_to(poly, d['outlines'])
         placed.append(Polygon(xy(poly)).buffer(0))
         entries.append((1, w, uid, cat, poly, extra))

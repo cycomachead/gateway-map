@@ -237,6 +237,8 @@ FLOORS = {
                     '1230': [(2532.0, 1476.7), (2559.1, 1475.6), (2833.7, 1418.2), (2880.9, 1374.8), (2893.3, 1380.0),
                              (3036.7, 1543.3), (2650.0, 1620.0)]},
               # the Southwest wing's stair of the upper floors is the Southwest block's stair here
+              # named rooms without a room number take their wing from here
+              wings={'fare-gates': 'Northeast'},
               named=[n for n in CORES if n is not SW_STAIR] + SW_RESTROOMS + [
                   # the Northeast core's multi-stall restroom is east of the elevators here
                   (1640, 840, 'ne-restroom', 'service', *MENS),
@@ -310,6 +312,7 @@ for f in FLOORS.values():
     f.setdefault('unnamed', 0)
     f.setdefault('unnamed_max', 40000)
     f.setdefault('terrace', [])
+    f.setdefault('wings', {})
     f.setdefault('blank', [])
     f.setdefault('rename', {})
 
