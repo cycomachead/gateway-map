@@ -169,6 +169,8 @@ draws the trace over the simplified drawing, coloured by parity with the level f
      An open office in `desk_box` is the rectangle around its desks (the worksurfaces standing
      in its patch area, not those of another area), in the frame of the desks' own direction,
      widened 8 pt for the chairs: it stops short of the next office instead of cutting into it.
+     A room standing in the block (a huddle room) is cut out as its box in that frame, 2 pt
+     around it, boxes that meet joined into one, so the notch has right angles.
      A room with `guides` in the patch file (three points along its curved wall) is clipped to
      the circle through them. The social kitchens (a `SOCIAL KITCHEN` label on a long trace)
      have their parallel sides pulled in 2 pt and straightened and their curved ends fitted
@@ -184,8 +186,8 @@ draws the trace over the simplified drawing, coloured by parity with the level f
      treads. The stair follows the atrium: the band of the ellipse between the treads' median
      inner and outer radii, from the first tread's angle to the last one's, and its centreline
      on the ellipse between them is the arrow the map draws along it, pointing the way the
-     stair goes (the west stair rises from its north end, 2 → 3; the east one from its south
-     end, 3 → 4). Floor 4 traces its atrium from the opening, so `stair_frame` lends it floor
+     stair goes (both stairs rise from their north end to their south end: the west one 2 → 3,
+     the east one 3 → 4). Floor 4 traces its atrium from the opening, so `stair_frame` lends it floor
      3's rail ellipse to find the treads in.
    - Labels whose fill still escapes into the corridor network are open areas: the unenclosed
      free space (on the furniture-free raster) is partitioned between them by geodesic
@@ -240,7 +242,8 @@ draws the trace over the simplified drawing, coloured by parity with the level f
    regions (identified by a point inside them), hand polygons, `manual` rooms drawn whole (a
    storage room the plan leaves blank, a suite's hall, the Southwest core's restrooms, which
    are one shape shared by floors 2–4), boxed rooms, renamed rooms
-   (`rename`, for a room whose use differs from the plan's label), `suites`, and the similarity transform
+   (`rename`, for a room whose use differs from the plan's label), `suites`, `icons` (a pictogram for a
+   room, the help desk's computer), and the similarity transform
    that registers the Lower Level sheet (drawn at 1/8" = 1' and rotated) onto the upper-floor
    sheets; it was fitted on the six elevator shafts and has a residual below 0.1 pt. Also maps
    the plan's room names to categories and display names.

@@ -321,8 +321,8 @@ the counts on any floor.
   long way off are not the stair's. The stair follows the atrium: the band of the ellipse
   between the treads' median inner and outer radii from the first tread to the last (the
   straight end flights are drawn on the curve too), and the arrow runs along the ellipse
-  between them. The break lines misled on direction: Michael confirmed the west stair rises
-  from its north end and the east one from its south end. The map draws each as a solid band
+  between them. The break lines misled on direction: Michael confirmed both stairs rise from
+  their north end to their south end (the west one 2 → 3, the east one 3 → 4). The map draws each as a solid band
   over the atrium with a stairs icon, an arrow and an Up/Down label at the arrow's head; the
   atrium is exempt from the overlap pass under its stairs. Floor 4 traces its atrium from the
   opening, so `stair_frame` gives it floor 3's rail ellipse for the detection.
@@ -342,3 +342,15 @@ the counts on any floor.
   tip 30 pt shorter, bulges kept.
 - **About.** The dialog names the Barbara and Gerson Bakar Gateway and CDSS, states the
   WCAG 2.2 AA target with a contact, and has an Info button that swaps in the Info dialog.
+
+## Findings from the ninth review (2026-10-30)
+
+- **A desk block's cut-out.** 3160 is the rectangle around its desks; 3151 and the closet
+  beside it stand in it and are cut out as one box in the desks' frame (boxes that meet join),
+  so the notch has right angles and the shape stays simple.
+- **The same room on every floor.** 3310 takes 2310's hand polygon (a right angle at its
+  lower left); the west stair along the Southwest facade, which floor 5 traces as one region,
+  is drawn on floors 2–4 as that region squared off (`WEST_STAIR_UPPER`), the same size and
+  place on each.
+- **Icons by room.** `icons` in the floor config gives a room a pictogram; 3397 shows a
+  computer. Every copy room shows the printer whatever the plan calls it (1456).

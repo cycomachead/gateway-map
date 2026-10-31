@@ -204,6 +204,8 @@ def emit_floor(fid, d, x0, y0, out_dir):
         extra = with_icon(extra)
         if cat == 'copy':  # every copy room carries the printer, whatever the plan calls it
             extra.setdefault('icon', 'printer')
+        if r['id'] in cfg['icons']:  # a pictogram the floor config gives a room (the help desk's computer)
+            extra['icon'] = cfg['icons'][r['id']]
         entries.append((0 if r['kind'] == 'room' else 2, w, rid, cat, r['polygon'], extra))
     for st in d.get('atrium_stairs', []):  # the stairs winding inside the atrium's rail, with the way they go
         up = st['goes'] == 'up'

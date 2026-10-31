@@ -55,7 +55,7 @@ export const CATEGORY_LABELS: Record<SpaceCategory, string> = {
 };
 
 /** Pictograms drawn above a room's label (the restroom signs, a stair, a copy room's printer). */
-export type SpaceIcon = 'man' | 'woman' | 'all-gender' | 'stairs' | 'printer';
+export type SpaceIcon = 'man' | 'woman' | 'all-gender' | 'stairs' | 'printer' | 'computer';
 
 export interface Space {
   id: string;

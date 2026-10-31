@@ -734,10 +734,17 @@ def desks(geom, scale, zones):
 DESK_PAD = 8.0  # pt; an open office drawn around its desks reaches this far past them (the chairs)
 
 
-def desk_block(g, geom, scale, others):
+DESK_NOTCH = 2.0  # pt; a room standing in a desk block is cut out with this much room around it
+DESK_NOTCH_JOIN = 8.0  # pt; rooms standing in a desk block within a wall's width of each other share one cut-out
+DESK_NOTCH_MIN = 150.0  # pt²; a room has to reach this far into a desk block to be cut out of it
+
+
+def desk_block(g, geom, scale, others, rooms=()):
     """An open office as the rectangle around its desks: the worksurfaces standing in the area
     (not in another patch area), bounded in the frame of their own direction (desks are set
-    parallel to the walls) and widened by DESK_PAD for the chairs. None without two desks."""
+    parallel to the walls) and widened by DESK_PAD for the chairs. A room standing in the block
+    (`rooms`: polygons) is cut out as its bounding box in that frame, DESK_NOTCH around it, so
+    the notch has right angles. None without two desks."""
     quads = []
     for q in desks(geom, scale, g):
         c = Point(sum(p[0] for p in q) / 4, sum(p[1] for p in q) / 4)
@@ -757,7 +764,35 @@ def desk_block(g, geom, scale, others):
     pa, pb = Q @ u, Q @ v
     pad = DESK_PAD * scale
     lo_a, hi_a, lo_b, hi_b = pa.min() - pad, pa.max() + pad, pb.min() - pad, pb.max() + pad
-    return Polygon([u * lo_a + v * lo_b, u * hi_a + v * lo_b, u * hi_a + v * hi_b, u * lo_a + v * hi_b])
+    block = Polygon([u * lo_a + v * lo_b, u * hi_a + v * lo_b, u * hi_a + v * hi_b, u * lo_a + v * hi_b])
+    # the rooms standing in the block, each as its box in the desks' frame; boxes that meet
+    # or stand a wall apart become one (a huddle room and the closet beside it), so the notch is simple
+    n = DESK_NOTCH * scale
+    boxes = []
+    for room in rooms:  # a room merely brushed by the block is left to the emitter's overlap pass
+        if room.intersects(block) and room.intersection(block).area >= DESK_NOTCH_MIN * scale * scale:
+            R = np.array(room.exterior.coords)
+            ra, rb = R @ u, R @ v
+            boxes.append([ra.min() - n, ra.max() + n, rb.min() - n, rb.max() + n])
+    merged = True
+    m = DESK_NOTCH_JOIN * scale
+    while merged and len(boxes) > 1:
+        merged = False
+        for i in range(len(boxes)):
+            for j in range(i + 1, len(boxes)):
+                a0, a1, b0, b1 = boxes[i]
+                c0, c1, d0, d1 = boxes[j]
+                if a0 <= c1 + m and c0 <= a1 + m and b0 <= d1 + m and d0 <= b1 + m:
+                    boxes[i] = [min(a0, c0), max(a1, c1), min(b0, d0), max(b1, d1)]
+                    boxes.pop(j)
+                    merged = True
+                    break
+            if merged:
+                break
+    for a0, a1, b0, b1 in boxes:
+        notch = Polygon([u * a0 + v * b0, u * a1 + v * b0, u * a1 + v * b1, u * a0 + v * b1])
+        block = biggest(block.difference(notch))
+    return block
 
 
 def align_walls(rooms, scale):
@@ -1290,7 +1325,8 @@ def build(fid, workdir):
             g = g.minimum_rotated_rectangle
             poly = ring(g)
         elif kind == 'open' and rid in cfg['desk_box'] and (blk := desk_block(
-                g, geom, scale, [Polygon(flatten(a)).buffer(0) for k, a in patches['areas'].items() if k != rid])) is not None:
+                g, geom, scale, [Polygon(flatten(a)).buffer(0) for k, a in patches['areas'].items() if k != rid],
+                [Polygon(flatten(r['polygon'])).buffer(0) for r in rooms if r['kind'] == 'room' and len(r['polygon']) >= 3])) is not None:
             g = blk  # an open office drawn as the block around its desks, parallel to them
             g_holes = g
             poly = ring(g)
