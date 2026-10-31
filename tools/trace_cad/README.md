@@ -24,6 +24,73 @@ regions with their index, blue desks, orange furniture clusters with the open la
 dots and their cells in grey, magenta outline, grey exterior). Extracting a sheet needs ~1.5 GB of
 RAM, so floors are processed one at a time.
 
+## Vector tracer (`gen2.py`)
+
+The newer path traces rooms from a wall-only vector drawing instead of a raster flood fill;
+see `docs/superpowers/specs/2026-10-29-vector-tracer-design.md`. It needs only the packages in
+`requirements.txt`:
+
+```sh
+python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
+.venv/bin/python gen2.py ../../floorplans/architect-pdfs/floorplans <workdir>      # every floor
+.venv/bin/python gen2.py ../../floorplans/architect-pdfs/floorplans <workdir> 3    # one floor
+.venv/bin/python emit_ts.py <workdir> ../../src/data/gateway
+```
+
+Per floor, `gen2.py` runs:
+
+1. `extract.py` (cached in `<pdf>_geom.json`).
+2. `walls.py` — the wall strokes (black, unfilled, not furniture, at least 0.5 pt) plus the
+   gently turning open polylines (the curved facades and glass fronts, which the extractor's
+   furniture rule would hide), the structural columns (circles of column size whose rim meets a wall, kept as discs) and both
+   chords of every door swing (one closes the doorway, the other lies along the open leaf).
+   Writes `<pdf>_walls.json` and `<pdf>_walls.pdf`, the simplified drawing: walls black,
+   columns blue, door closures red, patch lines green, labels grey. Open it to read the
+   coordinates for a patch.
+3. `faces.py` — paints the strokes 3 pt wide, subtracts them from the plan border and takes
+   each piece of free space as a face (holes filled, so furniture never cuts a room). The
+   face holding a room number is that room; faces without a label are listed as unlabelled
+   regions for `floors.py`'s `named` seeds, each with the direction of the walls drawn
+   around it (`axis`, for the emitter to square the cores to); the outside face gives the
+   outline. Labels in the corridor network are open-plan areas and come from the patch
+   file. A room's shape: slits (a stroke poking in) and column bites filled, a furnished
+   pocket (casework behind a single line) absorbed, the minimum rectangle or four fitted
+   walls when they cover it, else the simplified face with arcs; walls of neighbouring
+   rooms that nearly share a line are put on it. The outline loses the drafting along the
+   facade (door chords, mullion boxes, column bumps) before it is simplified and its curves
+   fitted with arcs, and a facade's facets a few degrees apart (not part of a curve) become
+   one flat wall; an open-plan area's clip is tidied the same way and gets arcs, a piazza is
+   rounded hard into a few curves and kept 8 pt off the atrium's rail (so its inner curve is
+   the rail's), and an open office is one rectangle, or two at right angles, when that covers
+   it well enough (odd angles are the corridor's), or its minimum rectangle when the floor's
+   `box` set says so. Desks
+   are kept only in the open areas. Elevator shafts are found by their X marks (two strokes
+   of one length crossing at their midpoints) and listed as `shafts`; every door between
+   corridors and open areas is listed as `doors` (hinge, strike, open end; pairs of leaves as
+   one door), with the doors the patch file names marked to be shown. A patch line is painted
+   as thick as a wall, so what it closes off is never absorbed as a pocket. Writes
+   `<pdf>_rooms.json`, which `emit_ts.py` reads as before.
+4. `compare.py` — every numbered room of the committed `level*.ts` against the trace, as
+   IoU counts at 0.95 / 0.9 / 0.8 and the rooms below 0.8. A change to the tracer may not
+   lower the counts on any floor.
+
+`patches/floor-<label>.json` holds the hand corrections, in the sheet's PDF points:
+`lines` are walls the sheet does not draw (a doorway without a swing, a gap at a glass
+front), `doors` are points naming the doors to show on the map (the nearest detected swing
+gets a marker and the name), and `areas` are polygons for rooms the walls do not enclose (open offices, piazzas,
+porches, phone booths), for rooms the walls trace badly (drawn as given, arcs included) and,
+keyed by the ids `floors.py` names them, for cores the hatching hides (a restroom with its
+stalls). A `terrace` area only bounds the roof deck, which is traced from its paver cells.
+`doors` lists the doors to show (`[x, y, name]`, the detected swing nearest the point; a fourth
+value, a room's id, puts the marker on that room's edge). `guides` gives a room three points
+along its curved wall, and the room is clipped to the circle through them. `bootstrap_patches.py <workdir> <floor> --write [--emitted <dir>]`
+seeds them from the committed level file: areas for the open-plan rooms, booths and `quad`
+rooms, seal lines where a leaked or shared room's level polygon crosses free space, and
+with `--emitted` the named regions whose emitted polygon misses the committed one badly. `preview.py <workdir> <floor> <out.png>`
+draws the trace over the simplified drawing, coloured by parity with the level file, and
+`difflevels.py <emitted dir>` diffs freshly emitted level modules against the committed ones
+(emit into a directory holding a copy of `frame.ts` so both share the frame).
+
 ## How it works
 
 1. `extract.py` — pulls every stroke, small chained polyline, furniture quad and text line out
@@ -96,7 +163,32 @@ RAM, so floors are processed one at a time.
      quarter-circle notch at every door; each swing that opens into a room is added back to
      that room's polygon, so the map treats the doorway as part of the room. Rooms listed in
      the floor's `box` (research labs whose internal lines are benches, not walls) are reduced
-     to their minimum-area bounding rectangle.
+     to their minimum-area bounding rectangle. An open area listed in `asis` (drawn as a few
+     walls in the patch file, which the free space all but fills) is drawn exactly as its
+     patch polygon, since a fitted rectangle would put a corner off the wall it was drawn on.
+     An open office in `desk_box` is the rectangle around its desks (the worksurfaces standing
+     in its patch area, not those of another area), in the frame of the desks' own direction,
+     widened 8 pt for the chairs: it stops short of the next office instead of cutting into it.
+     A room standing in the block (a huddle room) is cut out as its box in that frame, 2 pt
+     around it, boxes that meet joined into one, so the notch has right angles.
+     A room with `guides` in the patch file (three points along its curved wall) is clipped to
+     the circle through them. The social kitchens (a `SOCIAL KITCHEN` label on a long trace)
+     have their parallel sides pulled in 2 pt and straightened and their curved ends fitted
+     as arcs (`kitchen_shape`).
+   - A facade drawn in panels has a step of a point or two at every joint; `drop_jogs` replaces
+     an edge shorter than 4 pt between two stretches of one wall by its midpoint, which the
+     facet merge then drops, so the wall is one line.
+   - The stairs winding inside the atrium's rail (floors 2–4, `atrium_stairs` in the floor
+     config: side, up or down, to which floor, which end is the top) are traced from their
+     treads: the radial strokes 15–90 pt long between the opening and the rail that stand in a
+     row of parallel strokes, strokes on one line merged (the handrail cuts a tread in two).
+     Sorted around the atrium they fall into flights, a landing being a gap of more than two
+     treads. The stair follows the atrium: the band of the ellipse between the treads' median
+     inner and outer radii, from the first tread's angle to the last one's, and its centreline
+     on the ellipse between them is the arrow the map draws along it, pointing the way the
+     stair goes (both stairs rise from their north end to their south end: the west one 2 → 3,
+     the east one 3 → 4). Floor 4 traces its atrium from the opening, so `stair_frame` lends it floor
+     3's rail ellipse to find the treads in.
    - Labels whose fill still escapes into the corridor network are open areas: the unenclosed
      free space (on the furniture-free raster) is partitioned between them by geodesic
      distance, but each label's open area is only the *furnished* part of its cell, so the
@@ -132,18 +224,26 @@ RAM, so floors are processed one at a time.
    - Floors 1–3 have stairs winding down inside the atrium's rail, so the opening never closes
      as one region; the floor's `atrium` ellipse replaces the stair pieces inside it.
    - Floor 5's indoor blocks stand on a paved roof terrace (`terrace` seeds on its pavers and
-     walkways). The deck is one open area with the blocks as its holes, its edges line-fitted
-     runs like the outline's.
+     walkways). The pavers' hatching chops the deck into cells; the cells joined across their
+     strokes are the deck, holes and all (the blocks with their corridors, the skylight), so
+     the terrace stops at the blocks' walls. A `terrace` patch area only bounds it; patch
+     lines noted `terrace:` fence off the strips behind the blocks that the paving joins to
+     the deck. The deck is rounded (6 pt), kept 2 pt off the walls, and the skylight's ellipse
+     (grown by a wall) is cut out of it.
    - Plans that number only the furnished rooms (Lower Level, 1, 5) set `unnamed`: every
      other enclosed region of room size is emitted as an unnumbered room (a rectangle when it
      nearly fills one), leaving out strips along the facades, corridors and pockets inside a
-     room.
+     room. A region holding one of the floor's `square` points is drawn as its minimum
+     rectangle whatever its trace (a jagged tip, a stepped side wall).
    - Rooms whose fill cannot be traced (a label in the corridor, benches drawn as walls, a
      side open to the neighbouring workspace, the tiered lecture halls) are drawn by hand in
      the floor's `hand`, from wall coordinates read off the sheet.
 3. `floors.py` — per-floor configuration: label style, hand seeds, gap-sealing strokes, named
-   regions (identified by a point inside them), hand polygons, boxed rooms, renamed rooms
-   (`rename`, for a room whose use differs from the plan's label), and the similarity transform
+   regions (identified by a point inside them), hand polygons, `manual` rooms drawn whole (a
+   storage room the plan leaves blank, a suite's hall, the Southwest core's restrooms, which
+   are one shape shared by floors 2–4), boxed rooms, renamed rooms
+   (`rename`, for a room whose use differs from the plan's label), `suites`, `icons` (a pictogram for a
+   room, the help desk's computer), and the similarity transform
    that registers the Lower Level sheet (drawn at 1/8" = 1' and rotated) onto the upper-floor
    sheets; it was fitted on the six elevator shafts and has a residual below 0.1 pt. Also maps
    the plan's room names to categories and display names.
@@ -164,9 +264,28 @@ RAM, so floors are processed one at a time.
    onto the turned wall instead). A final pass guarantees rooms never overlap: arcs fitted
    after the reconciliation, boxed cores, ellipses and hand shapes can still bite a neighbour,
    so each polygon gives up what a higher-priority one covers (enclosed rooms, then cores and
-   named regions, then open areas, then unnumbered rooms); an overlap nowhere wider than
-   1.5 px is a shared wall whose faces were just turned parallel and is left alone, and any
-   spike a cut leaves behind is removed. Coordinates are PDF points of the upper-floor sheets,
+   named regions, then open areas, then unnumbered rooms), and a last pass (`resolve_overlaps`)
+   cuts whatever is left above half a point, hairlines along shared partitions included
+   (between equals the bigger polygon gives way; one with arcs only when the other cannot);
+   a four-walled room keeps its four walls, the wall along the overlap moving in instead.
+   Finally every room is pulled in by 1 pt (arcs refitted), so neighbours never touch and
+   each border shows.
+   Elevator banks are drawn from their shafts' X marks (`bank_cells`): a cell per seed, a
+   pitch wide and as deep as the marks, side by side; a stair edge within 30 pt of its bank's
+   edge is put on one line with it (`align_cores`). After the overlap pass every room is
+   clipped to the outline (`clip_entries`), then pulled in by 1 pt. A suite (`suites`: id →
+   category, name, tags and a point inside each member room) is a `manual` region drawn
+   between or around rooms; the unnumbered rooms whose centre lies in it, or which hold one
+   of the points, take its category and name, and the suite carries the `suite` tag, which
+   the map draws lighter and dashed. Doors go out as `DoorSpec`s, the ones the patch file
+   names flagged to be shown; a door the patch file puts on a room's edge (a fourth value,
+   the room's id) is moved to the nearest point of that room's boundary and turned along it
+   (`snap_doors`), so a suite's entrances sit on the suite as drawn. A numbered room of
+   10 000 pt² or more whose name says more than its colour (not an office, open office or
+   piazza) carries the name as a `caption`, which the map draws small under the number; every
+   room of the copy category carries a printer icon, whatever the plan calls it. The atrium stairs go out as circulation spaces with an `arrow`
+   (the way they go), labelled Up or Down at the arrow's head; the atrium keeps its shape
+   under them. Coordinates are PDF points of the upper-floor sheets,
    shifted so the building starts near the origin (`frame.ts`); the frame is kept across reruns
    while the building still fits in it (`--reframe` recomputes it).
 

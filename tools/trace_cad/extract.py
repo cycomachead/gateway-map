@@ -3,7 +3,7 @@
 Usage: python3 extract.py <pdf> <out.json>
 
 Writes segments, bezier curves, rectangles, quads (all in PDF points, y down) and the text
-lines with their bounding boxes and font sizes. Segments and curves carry a furniture flag
+lines with their bounding boxes and font sizes, plus every chained polyline (`chains`). Segments and curves carry a furniture flag
 (a multi-piece path of furniture size: desks, chairs, round tables, door swings), so the room
 tracer can draw a furniture-free wall raster and a furniture-only one. Everything downstream works from this JSON so the
 (large) PDFs only have to be parsed once.
@@ -17,7 +17,7 @@ import pymupdf
 def extract(src: str, out: str) -> None:
     doc = pymupdf.open(src)
     page = doc[0]
-    segs, curves, rects, polylines, quads = [], [], [], [], []
+    segs, curves, rects, polylines, quads, chains = [], [], [], [], [], []
     for d in page.get_drawings():
         col = d.get('color')
         width = d.get('width') or 0
@@ -38,11 +38,16 @@ def extract(src: str, out: str) -> None:
             pts = [q.ul, q.ur, q.lr, q.ll]
             if min(abs(pts[i] - pts[(i + 1) % 4]) for i in range(4)) >= 4:
                 quads.append([[p.x, p.y] for p in pts] + [width, black])
-        # Small chained polylines (door swings are drawn as ~10 short segments on a circle).
-        if black and 3 <= len(items) <= 64 and all(it[0] == 'l' for it in items):
+        # Small chained polylines (door swings are drawn as ~10 short segments on a circle),
+        # and every chained polyline of any size (the curved facades are chains of short
+        # pieces up to a few hundred points long, which the furniture rule above would hide).
+        if black and 3 <= len(items) <= 512 and all(it[0] == 'l' for it in items):
             r = d['rect']
-            if max(r.width, r.height) <= 80 and all(abs(items[i][2] - items[i + 1][1]) < 0.05 for i in range(len(items) - 1)):
-                polylines.append([[items[0][1].x, items[0][1].y]] + [[it[2].x, it[2].y] for it in items])
+            if all(abs(items[i][2] - items[i + 1][1]) < 0.05 for i in range(len(items) - 1)):
+                pts = [[items[0][1].x, items[0][1].y]] + [[it[2].x, it[2].y] for it in items]
+                chains.append(pts)
+                if len(items) <= 64 and max(r.width, r.height) <= 80:
+                    polylines.append(pts)
         for it in items:
             if it[0] == 'l':
                 a, b = it[1], it[2]
@@ -73,8 +78,8 @@ def extract(src: str, out: str) -> None:
                 'dir': list(line['dir']),
             })
     json.dump({'page': [page.rect.width, page.rect.height], 'segs': segs, 'curves': curves,
-               'rects': rects, 'polylines': polylines, 'quads': quads, 'lines': lines}, open(out, 'w'))
-    print(f'{src}: {len(segs)} segments, {len(curves)} curves, {len(rects)} rects, {len(polylines)} polylines, {len(quads)} furniture quads, {len(lines)} text lines')
+               'rects': rects, 'polylines': polylines, 'chains': chains, 'quads': quads, 'lines': lines}, open(out, 'w'))
+    print(f'{src}: {len(segs)} segments, {len(curves)} curves, {len(rects)} rects, {len(polylines)} polylines, {len(chains)} chains, {len(quads)} furniture quads, {len(lines)} text lines')
 
 
 if __name__ == '__main__':

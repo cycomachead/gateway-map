@@ -6,15 +6,22 @@ type Route = Pick<AppState, 'floorId' | 'selectedSpaceId'>;
 const base = import.meta.env.BASE_URL;
 const floorPath = (floorId: string) => `${base}floor-${floorId}`;
 
-/** Only accept rooms belonging to the floor in the path. */
+/**
+ * Only accept rooms belonging to the floor in the path. `room` is the space id (`3-3346`) or
+ * just the room number as people type it (`3346`); the written URL carries the id.
+ */
 export function readRoute(): Route {
   const url = new URL(window.location.href);
   const path = url.pathname.replace(/\/$/, '');
   const floor = building.floors.find((f) => floorPath(f.id) === path);
   const floorId = floor?.id ?? DEFAULT_FLOOR_ID;
   const roomId = url.searchParams.get('room');
-  const room = building.spaces.find((s) => s.id === roomId && s.floorId === floorId);
-  return { floorId, selectedSpaceId: room?.id ?? null };
+  const room =
+    roomId &&
+    building.spaces.find(
+      (s) => s.floorId === floorId && (s.id === roomId || s.id === `${floorId}-${roomId}` || s.id === `${floorId}-${roomId.toLowerCase()}`),
+    );
+  return { floorId, selectedSpaceId: room ? room.id : null };
 }
 
 /** Keep shareable URLs and browser history in sync with every selection control. */

@@ -1,5 +1,5 @@
 import { pts, type XY } from '../helpers';
-import type { Poi, PoiKind, Space, SpaceCategory, SpaceIcon } from '../types';
+import type { Door, Poi, PoiKind, Space, SpaceCategory, SpaceIcon } from '../types';
 
 export type Wing = 'Northeast' | 'Southwest';
 
@@ -7,6 +7,8 @@ export type RoomExtra = {
   name?: string;
   label?: string;
   icon?: SpaceIcon;
+  caption?: string;
+  arrow?: XY[];
   description?: string;
   tags?: string[];
   holes?: XY[][];
@@ -20,6 +22,21 @@ export type RoomSpec = [Wing | undefined, string, SpaceCategory, XY[], RoomExtra
 
 /** A point of interest: [id, name, kind, position, description]. */
 export type PoiSpec = [string, string, PoiKind, XY, string?];
+
+/** A door: [a, b, open end, flags] (see `Door`): `leaves: 2` for a pair, `show` for a marker. */
+export type DoorSpec = [XY, XY, XY, { leaves?: 2; show?: boolean; name?: string }?];
+
+const pt = ([x, y]: XY): { x: number; y: number } => ({ x, y });
+
+export const doorsFrom = (doors: DoorSpec[]): Door[] =>
+  doors.map(([a, b, open, flags]) => ({
+    a: pt(a),
+    b: pt(b),
+    open: pt(open),
+    leaves: flags?.leaves ?? 1,
+    ...(flags?.show ? { shown: true } : {}),
+    ...(flags?.name ? { name: flags.name } : {}),
+  }));
 
 const kindName: Partial<Record<SpaceCategory, string>> = {
   meeting: 'Meeting Room',
@@ -37,6 +54,8 @@ export function makeSpace(floorId: string, wing: Wing | undefined, id: string, c
     name: extra.name ?? `${kindName[category] ?? 'Room'} ${id}`,
     label: extra.label ?? number ?? extra.name ?? id,
     ...(extra.icon ? { icon: extra.icon } : {}),
+    ...(extra.caption ? { caption: extra.caption } : {}),
+    ...(extra.arrow?.length ? { arrow: pts(extra.arrow) } : {}),
     floorId,
     category,
     wing,

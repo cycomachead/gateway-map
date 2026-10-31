@@ -23,6 +23,7 @@ export type SpaceCategory =
   | 'study'
   | 'amenity'
   | 'service'
+  | 'copy'
   | 'circulation';
 
 export const SPACE_CATEGORIES: SpaceCategory[] = [
@@ -35,6 +36,7 @@ export const SPACE_CATEGORIES: SpaceCategory[] = [
   'study',
   'amenity',
   'service',
+  'copy',
   'circulation',
 ];
 
@@ -48,11 +50,12 @@ export const CATEGORY_LABELS: Record<SpaceCategory, string> = {
   study: 'Study spaces',
   amenity: 'Amenities',
   service: 'Services',
+  copy: 'Copy rooms',
   circulation: 'Circulation',
 };
 
-/** Pictograms drawn above a room's label (the restroom signs). */
-export type SpaceIcon = 'man' | 'woman' | 'all-gender';
+/** Pictograms drawn above a room's label (the restroom signs, a stair, a copy room's printer). */
+export type SpaceIcon = 'man' | 'woman' | 'all-gender' | 'stairs' | 'printer' | 'computer';
 
 export interface Space {
   id: string;
@@ -64,6 +67,10 @@ export interface Space {
   label?: string;
   /** A pictogram drawn above the label. */
   icon?: SpaceIcon;
+  /** The room's name, drawn small under the label; set for rooms large enough to carry it. */
+  caption?: string;
+  /** A direction drawn along the space (the way a stair goes), tail to head; the label sits at the head. */
+  arrow?: Point[];
   floorId: string;
   category: SpaceCategory;
   /** Closed outline; last point is implicitly joined to the first. Edges may be arcs via `bulge`. */
@@ -90,7 +97,8 @@ export type PoiKind =
   | 'info'
   | 'porch'
   | 'lactation'
-  | 'meditation';
+  | 'meditation'
+  | 'accessible';
 
 export const POI_LABELS: Record<PoiKind, string> = {
   elevator: 'Elevator',
@@ -102,6 +110,7 @@ export const POI_LABELS: Record<PoiKind, string> = {
   porch: 'Front porch',
   lactation: 'Lactation room',
   meditation: 'Meditation room',
+  accessible: 'Accessible route',
 };
 
 export interface Poi {
@@ -125,6 +134,22 @@ export interface Floor {
   islands?: Point[][];
   /** Desk footprints in the open workspaces, drawn for orientation only (not interactive). */
   desks?: Point[][];
+  /** The doors the plans show between corridors and open areas (see `Door`). */
+  doors?: Door[];
+}
+
+/**
+ * A door: the doorway along its wall from `a` to `b` (hinge to strike, or hinge to hinge for a
+ * pair of leaves) and `open`, where the leaf hinged at `a` stands when open. Every door between
+ * corridors and open areas is here for directions; only a door marked `shown` gets a marker.
+ */
+export interface Door {
+  a: Point;
+  b: Point;
+  open: Point;
+  leaves: 1 | 2;
+  shown?: boolean;
+  name?: string;
 }
 
 /** A street next to the building, drawn on every floor for orientation (not interactive). */

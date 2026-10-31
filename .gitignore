@@ -30,3 +30,6 @@ blob-report
 
 # Python tooling
 __pycache__/
+
+# Python venv for tools/trace_cad
+.venv

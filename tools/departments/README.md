@@ -61,3 +61,7 @@ dropped from an office, and every annotation in a room that is not an office (th
 the labs, the hoteling huddle rooms, the Dean's suite's conference room), is printed for
 review; surnames written alone ("Tangherlini", "Nielsen / Huelsenbeck") are kept as the
 sheet gives them.
+
+Corrections to what the sheets say (a room that is vacant, a name that moved) go in
+`src/data/gateway/occupant_fixes.ts`, kept by hand and applied after the two sources are merged;
+rerunning the importer does not touch it.

@@ -6,23 +6,27 @@
   --text: #16181d;
   --text-muted: #5f6672;
   --border: #d9dce2;
-  --accent: #1d4ed8;
-  --accent-soft: #dbe4ff;
+  --accent: #002676; /* Berkeley Blue */
+  --accent-soft: #dbe9ff;
   --floor-fill: #fbfbfc;
   --floor-stroke: #7c8494;
   --street: #e2e5ea;
   --street-line: #ffffff;
 
-  --c-classroom: #0ea5e9;
-  --c-lab: #8b5cf6;
-  --c-office: #3b82f6;
-  --c-meeting: #f59e0b;
-  --c-focus: #eab308;
-  --c-open: #93c5fd;
-  --c-study: #10b981;
-  --c-amenity: #ec4899;
-  --c-service: #64748b;
+  /* UC Berkeley brand colours (brand.berkeley.edu): blues for rooms you work in, golds for
+     rooms you meet in, greens for teaching and study, rose for amenities */
+  --c-classroom: #018943; /* Green Medium */
+  --c-lab: #8236c7; /* Purple Medium */
+  --c-office: #002676; /* Berkeley Blue */
+  --c-meeting: #fdb515; /* California Gold */
+  --c-focus: #fc9313; /* Gold Dark */
+  --c-open: #004aae; /* Blue Medium */
+  --c-study: #b3e59a; /* Green Light */
+  --c-amenity: #e7115e; /* Rose Medium */
+  --c-service: #808080; /* Gray Medium */
+  --c-copy: #770747; /* Rose Dark */
   --c-circulation: #cbd5e1;
+  --gold: #fdb515;
 
   --radius: 10px;
   --shadow: 0 4px 16px rgba(20, 24, 40, 0.12);
@@ -37,8 +41,8 @@
     --text: #e8eaef;
     --text-muted: #9aa3b2;
     --border: #2e333d;
-    --accent: #7ea2ff;
-    --accent-soft: #24304f;
+    --accent: #9fd1ff; /* Blue Light */
+    --accent-soft: #1b2a4a;
     --floor-fill: #1c2029;
     --floor-stroke: #6b7385;
     --street: #262a33;
@@ -96,7 +100,7 @@ button { font: inherit; color: inherit; }
   font-weight: 650; font-size: 17px; color: inherit; white-space: nowrap;
 }
 .brand__mark {
-  width: 22px; height: 22px; border-radius: 6px; background: var(--accent);
+  width: 22px; height: 22px; border-radius: 4px; display: block; object-fit: contain;
   mask: url('/favicon.svg') center / contain no-repeat; -webkit-mask: url('/favicon.svg') center / contain no-repeat;
 }
 .topbar__search { position: relative; flex: 1 1 260px; max-width: 420px; }
@@ -142,6 +146,7 @@ button { font: inherit; color: inherit; }
 .chip--study { --c: var(--c-study); }
 .chip--amenity { --c: var(--c-amenity); }
 .chip--service { --c: var(--c-service); }
+.chip--copy { --c: var(--c-copy); }
 
 .topbar__actions { display: flex; align-items: center; gap: 6px; margin-left: auto; }
 .text-btn {
@@ -172,6 +177,8 @@ button { font: inherit; color: inherit; }
 
 .furniture { pointer-events: none; }
 .desk { fill: var(--surface); stroke: var(--floor-stroke); stroke-width: 0.8; stroke-opacity: 0.6; }
+.door__dot { fill: var(--surface); stroke: var(--floor-stroke); stroke-width: 1.2; }
+.door__glyph { fill: none; stroke: var(--text); stroke-width: 1.4; stroke-linecap: round; stroke-linejoin: round; }
 
 .space { cursor: pointer; outline: none; }
 .space__shape {
@@ -185,8 +192,11 @@ button { font: inherit; color: inherit; }
 .space--focus { --c: var(--c-focus); }
 .space--open { --c: var(--c-open); }
 .space--study { --c: var(--c-study); }
+.space--study .space__shape { fill-opacity: 0.55; }
+.space--suite .space__shape { fill-opacity: 0.12; stroke-dasharray: 8 5; }
 .space--amenity { --c: var(--c-amenity); }
 .space--service { --c: var(--c-service); }
+.space--copy { --c: var(--c-copy); }
 .space--circulation { --c: var(--c-circulation); }
 .space--circulation .space__shape { fill-opacity: 0.5; stroke: var(--floor-stroke); stroke-dasharray: 4 3; }
 .space--circulation .space__label { font-size: 11px; font-weight: 500; fill: var(--text-muted); }
@@ -194,7 +204,7 @@ button { font: inherit; color: inherit; }
 .space:hover .space__shape { fill-opacity: 0.5; stroke-width: 2.5; }
 /* Keyboard focus (Tab or the arrow keys) gets an unmistakable ring in the accent colour. */
 .space:focus-visible .space__shape { fill-opacity: 0.5; stroke: var(--accent); stroke-width: 5; stroke-dasharray: 10 6; }
-.space.is-selected .space__shape { fill-opacity: 0.6; stroke-width: 3.5; stroke: var(--text); }
+.space.is-selected .space__shape { fill-opacity: 0.6; stroke-width: 3.5; stroke: var(--gold); }
 .space.is-selected:focus-visible .space__shape { stroke: var(--accent); }
 .space.is-dimmed { pointer-events: none; }
 .space.is-dimmed .space__shape { fill-opacity: 0.06; stroke-opacity: 0.25; }
@@ -206,6 +216,10 @@ button { font: inherit; color: inherit; }
 }
 .space__label-name { font-size: 8.5px; font-weight: 500; }
 .space__icon { fill: var(--text); pointer-events: none; }
+.space--stairway .space__shape { fill-opacity: 0.9; stroke-dasharray: none; }
+.space__arrow { fill: none; stroke: var(--text-muted); stroke-width: 2.5px; stroke-linecap: round; stroke-linejoin: round; pointer-events: none; }
+.arrowhead { fill: var(--text-muted); }
+.space.is-dimmed .space__arrow { opacity: 0.3; }
 .space.is-dimmed .space__icon { opacity: 0.3; }
 
 .poi__dot { fill: var(--surface); stroke: var(--floor-stroke); stroke-width: 1.5; }
@@ -287,6 +301,7 @@ button { font: inherit; color: inherit; }
 .swatch--study { --c: var(--c-study); }
 .swatch--amenity { --c: var(--c-amenity); }
 .swatch--service { --c: var(--c-service); }
+.swatch--copy { --c: var(--c-copy); }
 .muted { color: var(--text-muted); padding: 8px 10px; }
 
 /* ---- Dialogs (About, Keyboard shortcuts) ------------------------------- */
@@ -332,3 +347,24 @@ kbd {
 @media (prefers-reduced-motion: reduce) {
   * { transition: none !important; }
 }
+
+/* ---- Corrections ------------------------------------------------------- */
+.corrections { padding: 12px 16px; border-bottom: 1px solid var(--border); background: var(--surface-2); }
+.corrections__head { display: flex; align-items: center; justify-content: space-between; }
+.corrections__title { margin: 0; font-size: 1rem; }
+.corrections__tools { display: flex; gap: 8px; flex-wrap: wrap; margin: 8px 0; }
+.corrections__tools .btn[aria-pressed='true'] { background: var(--accent); color: #fff; border-color: var(--accent); }
+.corrections__hint { margin: 4px 0 8px; font-size: 0.85rem; color: var(--text-muted); }
+.corrections__list { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; max-height: 40vh; overflow: auto; }
+.corrections__empty { color: var(--text-muted); font-size: 0.9rem; }
+.correction { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 8px; display: grid; gap: 6px; }
+.correction__where { display: flex; justify-content: space-between; align-items: start; gap: 8px; font-size: 0.85rem; font-weight: 600; }
+.correction__remove { border: 0; background: none; font-size: 1rem; line-height: 1; cursor: pointer; color: var(--text-muted); }
+.correction__name, .correction__text, .corrections__out {
+  width: 100%; box-sizing: border-box; font: inherit; font-size: 0.9rem; padding: 6px 8px; border: 1px solid var(--border);
+  border-radius: 6px; background: var(--surface); color: var(--text);
+}
+.corrections__out { margin-top: 8px; font-family: ui-monospace, Menlo, monospace; font-size: 0.8rem; }
+.map.is-picking { cursor: crosshair; }
+.mark__dot { fill: var(--gold); stroke: var(--text); stroke-width: 1.5; }
+.mark__n { font-size: 11px; font-weight: 700; fill: var(--text); pointer-events: none; }

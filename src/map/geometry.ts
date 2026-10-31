@@ -158,3 +158,55 @@ export function streetBox(street: Street, within: BBox): BBox {
   if (!near.length) return within;
   return pad(bbox(near), street.width / 2);
 }
+
+/** Whether a point lies inside a polygon (ray casting; arcs are taken as chords). */
+export function containsPoint(polygon: Point[], p: Point): boolean {
+  let inside = false;
+  for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+    const a = polygon[i];
+    const b = polygon[j];
+    if (a.y > p.y !== b.y > p.y && p.x < ((b.x - a.x) * (p.y - a.y)) / (b.y - a.y) + a.x) inside = !inside;
+  }
+  return inside;
+}
+
+/** Distance from a point to the nearest edge of a polygon. */
+function edgeDistance(polygon: Point[], p: Point): number {
+  let best = Infinity;
+  for (let i = 0; i < polygon.length; i++) {
+    const a = polygon[i];
+    const b = polygon[(i + 1) % polygon.length];
+    const dx = b.x - a.x;
+    const dy = b.y - a.y;
+    const len2 = dx * dx + dy * dy || 1;
+    const t = Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / len2));
+    best = Math.min(best, Math.hypot(p.x - a.x - t * dx, p.y - a.y - t * dy));
+  }
+  return best;
+}
+
+/**
+ * Where a room's label goes: its centroid, unless that falls outside the room (a crescent, an
+ * L), in which case the inside point of a coarse grid that lies deepest in the room.
+ */
+export function labelPoint(polygon: Point[]): Point {
+  const flat = flatten(polygon);
+  const c = centroid(polygon);
+  if (containsPoint(flat, c)) return c;
+  const box = bbox(flat);
+  let best = c;
+  let bestDist = -Infinity;
+  const n = 24;
+  for (let i = 1; i < n; i++) {
+    for (let j = 1; j < n; j++) {
+      const p = { x: box.x + (box.width * i) / n, y: box.y + (box.height * j) / n };
+      if (!containsPoint(flat, p)) continue;
+      const d = edgeDistance(flat, p);
+      if (d > bestDist) {
+        bestDist = d;
+        best = p;
+      }
+    }
+  }
+  return best;
+}

@@ -136,8 +136,13 @@ test('arrow keys walk between neighbouring rooms, panning to keep them in view',
   // Only rooms: corridors are never a stop.
   await expect(focused).not.toHaveClass(/space--circulation/);
 
+  // Back left lands on a room left of that one (the nearest in that direction, which need
+  // not be the room we came from: a big neighbour's centre can be nearer than a small one's).
   await page.keyboard.press('ArrowLeft');
-  await expect(page.locator('#map [data-space-id="4-4161"]')).toBeFocused();
+  await expect(focused).toHaveCount(1);
+  const leftId = (await focused.getAttribute('data-space-id'))!;
+  expect(leftId).not.toBe(rightId);
+  expect((await centre(page, leftId)).x).toBeLessThan((await centre(page, rightId)).x);
 
   // Enter opens the focused room, as it does when tabbing.
   await page.keyboard.press('ArrowDown');

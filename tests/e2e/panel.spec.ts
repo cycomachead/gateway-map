@@ -89,7 +89,7 @@ test('the Info button opens INFO.md rendered as a dialog', async ({ page }) => {
   await expect(info.getByRole('heading', { level: 3 })).toHaveText(['Room Numbers', 'Site Features']);
   await expect(info).toContainText('Northeast side of the building');
   await expect(info.locator('kbd', { hasText: '?' })).toBeVisible();
-  await expect(info.locator('li')).toHaveCount(6);
+  await expect(info.locator('li')).toHaveCount(7);
   await info.getByRole('button', { name: 'Close' }).click();
   await expect(info).toBeHidden();
   await expect(page.getByRole('button', { name: 'Info', exact: true })).toBeFocused();

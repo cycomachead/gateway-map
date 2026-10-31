@@ -83,3 +83,26 @@ export function nameLines(name: string): string[] {
   const at = name.trim().lastIndexOf(' ');
   return at > 0 ? [name.slice(0, at).trim(), name.slice(at + 1).trim()] : [name.trim()];
 }
+
+/**
+ * Apply the hand corrections of `gateway/occupant_fixes.ts`: a room marked vacant loses its
+ * people, a room with `remove` loses the people named (by `samePerson`, so a spelling off by
+ * a letter still matches). Returns a new table.
+ */
+export function fixOccupants(
+  occupants: Record<string, string[]>,
+  fixes: Record<string, { vacant?: true; remove?: string[] }>,
+): Record<string, string[]> {
+  const out: Record<string, string[]> = { ...occupants };
+  for (const [room, fix] of Object.entries(fixes)) {
+    if (fix.vacant) {
+      delete out[room];
+      continue;
+    }
+    const people = out[room];
+    if (!people || !fix.remove?.length) continue;
+    out[room] = people.filter((p) => !fix.remove!.some((gone) => samePerson(p, gone)));
+    if (!out[room].length) delete out[room];
+  }
+  return out;
+}

@@ -13,7 +13,9 @@ for (const id of ['0', '1', '2', '3', '4', '5']) {
   });
 }
 
-test('room links restore the details, highlight, and zoom on reload', async ({ page }) => {
+const viewWidth = (viewBox: string | null) => Number(viewBox!.split(' ')[2]);
+
+test('room links restore the details and highlight, and show the room in its surroundings', async ({ page }) => {
   await page.goto('/floor-4');
   const floorView = await page.locator('#map').getAttribute('viewBox');
   await page.locator('#panel [data-space-id="4-4161"]').click();
@@ -24,11 +26,25 @@ test('room links restore the details, highlight, and zoom on reload', async ({ p
   await page.reload();
   await expect(page.locator('#panel h2')).toHaveText('Small Meeting Room 4161');
   await expect(page.locator('#map [data-space-id="4-4161"]')).toHaveClass(/is-selected/);
-  await expect(page.locator('#map')).toHaveAttribute('viewBox', roomView!);
+  // A link opens the room with its wing around it: closer than the floor, wider than a click.
+  const linkView = await page.locator('#map').getAttribute('viewBox');
+  expect(viewWidth(linkView)).toBeLessThan(viewWidth(floorView));
+  expect(viewWidth(linkView)).toBeGreaterThan(viewWidth(roomView));
 
   await page.getByRole('button', { name: 'Fit floor to view' }).click();
   await expect(page).toHaveURL('/floor-4');
   await expect(page.locator('#map')).toHaveAttribute('viewBox', floorView!);
+});
+
+test('a room link may carry just the room number', async ({ page }) => {
+  await page.goto('/floor-4?room=4161');
+  await expect(page).toHaveURL('/floor-4?room=4-4161');
+  await expect(page.locator('#panel h2')).toHaveText('Small Meeting Room 4161');
+  await expect(page.locator('#map [data-space-id="4-4161"]')).toHaveClass(/is-selected/);
+  // A number from another floor is not on this one.
+  await page.goto('/floor-3?room=4161');
+  await expect(page).toHaveURL('/floor-3');
+  await expect(page.locator('#panel h2')).toHaveText('Floor 3');
 });
 
 test('Back and Forward restore selections without adding history entries', async ({ page }) => {

@@ -1,0 +1,1522 @@
+"""Rooms from the wall-only drawing: the faces of the free space, labelled.
+
+Usage: python3 faces.py <floor id> <workdir>
+
+Reads <workdir>/<pdf>_walls.json and <pdf>_geom.json and the floor's patches, writes
+<workdir>/<pdf>_rooms.json in the schema emit_ts.py reads (rooms, outlines, unlabelled,
+exits, desks). Rooms whose label sits in the corridor network and have no patch area, and
+faces holding more than one label, are reported on stdout.
+
+See docs/superpowers/specs/2026-10-29-vector-tracer-design.md.
+"""
+import json
+import math
+import os
+import re
+import sys
+import warnings
+
+import numpy as np
+from shapely import voronoi_polygons
+from shapely.geometry import LineString, MultiPoint, MultiPolygon, Point, Polygon, box
+from shapely.ops import unary_union
+from shapely.strtree import STRtree
+from shapely.prepared import prep
+
+from floors import FLOORS, category
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'departments'))
+from levels import flatten  # noqa: E402  (bulged polygons back to vertices)
+from patches import load_patches
+from walls import BORDER, fit_circle, scale_of
+
+warnings.filterwarnings('ignore', category=RuntimeWarning, module='shapely')  # degenerate envelopes of slivers
+
+BUF = 1.5          # pt; half the width the strokes are painted with (seals drafting gaps up to 3 pt)
+GROW = 0.0         # pt; how far a face is grown back towards the stroke centres (0 keeps the level files' inset, 1.5 would be the stroke centre)
+MIN_FACE = 4       # pt²; smaller pockets are drafting slivers; the cells of hatched cores (tiles) are kept to be merged
+MIN_LABEL_FACE = 300  # pt²; a label is never given to a smaller face
+MAX_ROOM = 150000  # pt²; anything bigger is the corridor network
+MIN_ROOM = 600     # pt²; smaller unlabelled faces are closets and cavities, not rooms (floors.py `min_room` overrides)
+LABEL_REACH = 8.0  # pt; a label on a wall line is given to the nearest face this close
+SIMPLIFY = 0.5     # pt; vertex tolerance after growing the face back to the wall faces
+OUTLINE_TOL = 1.5  # pt; the outline's tolerance (the drafting along the facades is removed first, see tidy_outline)
+OUTLINE_SMOOTH = 8.0  # pt; jogs of the facade narrower than twice this (the mullion boxes are 13 pt wide, door chords 3) are not the outline
+OUTLINE_JOG = 60.0  # pt; ... and no longer than this (a column bump is 20 pt; a channel along a canopy is hundreds)
+OUTLINE_ARC_TOL = 2.0  # pt; the outline's curves are fitted with arcs this loosely ...
+OUTLINE_ARC_DEV = 6.0  # pt; ... and kept while they stray at most this far (the building is 3,000 pt across)
+OPEN = 2.5         # pt; notches narrower than twice this (strokes against a wall) are dropped from a room's shape
+CLOSE = 2.0        # pt; slits narrower than twice this (a single stroke poking into the room) are filled
+BITE = 10.0        # pt; a column standing in a wall bites this deep into a room, or bulges this far out of the outline
+ALIGN_TOL = 1.5    # pt; walls of neighbouring rooms this close to one line are drawn on it
+ALIGN_TURN = 1.0   # degrees; ... when they run within this of parallel
+ALIGN_GAP = 30.0   # pt; ... and continue each other across at most this gap (a partition, a closet)
+POCKET_MIN = 150.0 # pt²; a piece of the room this big behind a narrow neck (a desk against the wall) is kept
+QUAD_IOU = 0.9     # a rectangle covering a room this well replaces its shape
+ARC_TOL = 1.0      # pt; a run of short edges within this of a circle becomes one arc
+ARC_DEV = 2.0      # pt; arcs that stray further from the traced shape are discarded
+SLIVER_MAX = 60.0  # pt²; a four-wall fit must cover the shape but for slivers this small
+POCKET_MAX = 1000.0  # pt²; an unlabelled face this small touching one room only is furniture standing in it
+NOTCH_MAX = 400.0  # pt²; ... and may fill notches up to this (a credenza, a column's bite); a bowed wall leaves far more
+NOTCH_SHARE = 0.25 # or up to this share of the room (a desk drawn against the wall of a small office)
+NOTCH_TOTAL = 0.3  # all notches together at most this share of the room
+NOTCH_CAP = 1200.0 # pt²; no notch bigger than this however big the room (an oval's corners are not notches)
+FIT_OUTLIER = 3.0  # pt; boundary points further from a fitted wall are dropped once (a notch)
+CORNER_ZONE = 5.0  # pt; boundary points this close to a rectangle corner (rounded by the opening) fit no wall
+WALL_SUPPORT = 0.5 # a fitted wall's points must span at least this share of its length
+CURVE_SAG = 3.0    # pt; a wall along which the drawing's curves bow further than this is an arc
+BOW_REACH = 30.0   # pt; boundary points this far from a fitted wall may be that wall bowing
+BOW_RES = 3.5      # pt; the boundary must lie this close to one circle for the wall to be an arc
+EXIT_DIST = 25.0   # pt; a door hinge this close to the outline is an entrance
+CELL_MAX = 4.0     # x the floor's minimum room: smaller unlabelled faces are cells of a hatched core, merged across strokes
+CELL_GAP = 0.6     # pt; extra reach when joining cells (a stroke is 3 pt wide, cells meet across it)
+DECK_CELL = 1500.0 # pt²; faces up to this on a terrace floor may be paver cells of the deck
+WALL = 3.0         # pt; a block standing on the terrace is its rooms plus their walls
+DECK_BLOB = 20000.0 # pt²; an unlabelled region this big inside the terrace is paving, not a room
+DECK_ROUND = 6.0    # pt; the deck's edge is rounded this hard (the cell steps along a walkway go)
+DECK_GAP = 2.0      # pt; and kept this far off the walls
+DESK_SHORT = (9.0, 20.0)
+DESK_LONG = (18.0, 45.0)
+DESK_WIDTH = 0.9
+DESK_REACH = 5.0   # pt; a desk is drawn when its centre stands this close to an open area
+OPEN_KINDS = {'open', 'piazza', 'informal', 'porch', 'lounge'}  # categories drawn as open-plan areas
+IGNORE_NAMES = {'FEC', 'UP', 'DN', 'DOWN', 'RAMP', 'OPEN TO BELOW', 'WAP', 'Side A', 'Side B', 'Side C', 'Side D', '?'}
+
+
+def labels(geom, cfg):
+    """Room labels: [{'id', 'name', 'x', 'y'}], each number with the name lines nearest it
+    (the same rule as the raster tracer)."""
+    lo, hi = cfg['label_sizes']
+    number_re = re.compile(cfg['number_re'])
+    skip = cfg['skip']
+    lines = [l for l in geom['lines'] if lo <= l['size'] <= hi and l['bbox'][0] < BORDER[2]]
+    centre = lambda l: ((l['bbox'][0] + l['bbox'][2]) / 2, (l['bbox'][1] + l['bbox'][3]) / 2)
+    numbers = [l for l in lines if number_re.match(l['text']) and l['text'] not in skip]
+    names = [l for l in lines if not number_re.match(l['text']) and l['text'] not in IGNORE_NAMES and not re.match(r"^\d+'", l['text'])]
+    out = [{'id': n['text'], 'x': centre(n)[0], 'y': centre(n)[1], 'names': []} for n in numbers]
+    for nm in names:
+        cx, cy = centre(nm)
+        best = min(out, key=lambda o: math.hypot(o['x'] - cx, o['y'] - cy), default=None)
+        if best is not None and math.hypot(best['x'] - cx, best['y'] - cy) < 30 * hi / 5.0:
+            best['names'].append((cy, cx, nm['text']))
+    for o in out:
+        o['name'] = ' '.join(t for _, _, t in sorted(o['names'])).replace('/ ', '/').replace(' -', '').strip()
+        del o['names']
+    return out
+
+
+def free_space(w, patches):
+    """(faces, exterior faces) of the free space: the plan border minus the painted walls."""
+    lines = [LineString([(a, b), (c, d)]) for a, b, c, d in w['walls']]
+    lines += [LineString([(a, b), (c, d)]) for a, b, c, d in w['closures']]
+    # a patch line is a wall, not a stroke: painted as thick as a wall's two strokes, so the
+    # space it closes off is not a pocket to absorb (a nook sealed off from a classroom)
+    patched = [LineString([(a, b), (c, d)]) for a, b, c, d, *_ in patches['lines']]
+    scale = w['scale']
+    mass = unary_union([ln.buffer(BUF * scale, cap_style='flat') for ln in lines if ln.length > 0]
+                       + [ln.buffer(2 * BUF * scale, cap_style='flat') for ln in patched if ln.length > 0]
+                       + [Point(cx, cy).buffer(r + 0.5) for cx, cy, r in w['columns']])
+    border = box(*BORDER)
+    free = border.difference(mass)
+    pieces = [p for p in (free.geoms if isinstance(free, MultiPolygon) else [free]) if p.area >= MIN_FACE * scale * scale]
+    # a face is its outer ring: furniture standing in a room never cuts it. The outside is
+    # kept with its holes (the building is a hole in it) to find the outline.
+    faces = [Polygon(p.exterior) for p in pieces]
+    rim = border.exterior
+    exterior = [(f, p) for f, p in zip(faces, pieces) if p.intersects(rim)]
+    return faces, exterior
+
+
+def biggest(g):
+    if isinstance(g, MultiPolygon):
+        return max(g.geoms, key=lambda q: q.area)
+    return g
+
+
+def iou(a, b):
+    u = a.union(b).area
+    return a.intersection(b).area / u if u else 0.0
+
+
+def valid(g, fallback):
+    """A valid polygon or the fallback (simplification can fold a sliver over itself)."""
+    if g.is_valid and not g.is_empty:
+        return g
+    g = biggest(g.buffer(0))
+    return g if g.is_valid and not g.is_empty and g.area > 0.5 * fallback.area else fallback
+
+
+def merge_collinear(poly, deg=2.0):
+    pts = list(poly.exterior.coords[:-1])
+    if len(pts) < 5:
+        return poly
+    out = []
+    n = len(pts)
+    for i in range(n):
+        p, q, r = np.array(pts[i - 1]), np.array(pts[i]), np.array(pts[(i + 1) % n])
+        a, b = q - p, r - q
+        na, nb = np.linalg.norm(a), np.linalg.norm(b)
+        if na < 1e-9 or nb < 1e-9:
+            continue
+        cos = np.clip(np.dot(a, b) / (na * nb), -1, 1)
+        if math.degrees(math.acos(cos)) < deg:
+            continue
+        out.append(tuple(q))
+    return Polygon(out) if len(out) >= 3 else poly
+
+
+def shape(face, scale, quad=False, boxed=False, arcs=True):
+    """A room's polygon from its face, as vertices: grown back to the wall faces, simplified,
+    collinear runs merged; the minimum rectangle when it covers the room well (or is forced);
+    otherwise curved runs (a facade, a bay) collapsed into arcs, as bulge values."""
+    fitted = fit(face, scale, quad, boxed)
+    return fitted if isinstance(fitted, list) else ring(fitted, arcs)
+
+
+def ring(poly, arcs=False, tol=ARC_TOL, dev=ARC_DEV, min_iou=0.985):
+    pts = [[round(float(x), 1), round(float(y), 1)] for x, y in poly.exterior.coords[:-1]]
+    if arcs and len(pts) >= 8:
+        from rooms import arcify
+        arced = arcify(pts, tol=tol)
+        # keep the arcs only when they still trace the shape (a run of notch edges can be
+        # mistaken for a curve and come back as a bulge that is not there)
+        back = Polygon(flatten(arced)).buffer(0)
+        if not back.is_empty and iou(back, poly) >= min_iou and back.hausdorff_distance(poly) <= dev:
+            pts = arced
+    return pts
+
+
+COLUMNS = None  # STRtree of the floor's column discs, set by build(); fill_slits() closes their bites
+
+
+def fill_slits(face, scale):
+    """The face without the drafting that cuts into it: a single stroke poking in (a wall line
+    overshooting its corner, a leader) leaves a slit a stroke wide, closed with a mitred closing
+    that keeps the corners; a column standing in the wall leaves a round bite, closed only
+    within the column's disc, so a doorway recess of the same width stays."""
+    d = CLOSE * scale
+    g = valid(biggest(face.buffer(d, join_style='mitre').buffer(-d, join_style='mitre')), face)
+    if COLUMNS is not None:
+        near = [COLUMNS.geometries[i] for i in COLUMNS.query(face.buffer(1.0))]
+        near = [c for c in near if c.distance(face) < 1.0]
+        if near:
+            D = BITE * scale
+            closed = valid(biggest(face.buffer(D, join_style='mitre').buffer(-D, join_style='mitre')), face)
+            bites = closed.intersection(unary_union([c.buffer(1.0) for c in near]))
+            if not bites.is_empty:
+                g = valid(biggest(unary_union([g, bites]).buffer(0)), g)
+    g = Polygon(g.exterior)
+    return g if g.is_valid and g.area >= face.area else face
+
+
+def tidy_outline(building, scale, discs):
+    """The building without the drafting along its facade: strokes poking out or in (the door
+    chords of the entrances, the mullion boxes, lines overshooting a corner) are narrower than
+    any part of a building and go with a mitred closing and opening, which keep the corners;
+    a column standing in the facade bulges out by its radius and goes only within its disc."""
+    d = OUTLINE_SMOOTH * scale
+
+    def pieces(g):
+        return [p for p in (g.geoms if hasattr(g, 'geoms') else [g]) if not p.is_empty and p.area > 0]
+
+    def jog(p):  # nowhere wider than twice the smoothing and no longer than a bay: a jog, not a channel or a court
+        x0, y0, x1, y1 = p.bounds
+        return math.hypot(x1 - x0, y1 - y0) <= OUTLINE_JOG * scale and p.buffer(-(d + 0.1)).is_empty
+    # a closing fills the jogs cut into the facade, an opening drops the ones sticking out;
+    # only the jogs are taken, so a court reached through a narrow passage (which the closing
+    # would turn into a hole and the outline then swallow) stays outside, and so does the
+    # channel between the facade and a canopy standing in front of it
+    parts = [p for p in pieces(building) if p.area > 1]
+    closed = building.buffer(d, join_style='mitre').buffer(-d, join_style='mitre')
+    fills = [p for p in pieces(closed.difference(building)) if jog(p) and sum(q.intersects(p.buffer(0.1)) for q in parts) == 1]
+    g = unary_union([building] + fills) if fills else building
+    # a fill that closes the passage into a court makes the court a hole, which the outline
+    # (the outer ring) would swallow: fills touching a hole that was not one before are dropped
+    old_holes = unary_union([Polygon(r) for p in pieces(building) for r in p.interiors]) if any(p.interiors for p in pieces(building)) else Polygon()
+    new_holes = [Polygon(r) for p in pieces(g) for r in p.interiors if not old_holes.buffer(0.1).contains(Polygon(r).representative_point())]
+    if new_holes:
+        court = unary_union(new_holes).buffer(0.2)
+        fills = [f for f in fills if not f.intersects(court)]
+        g = unary_union([building] + fills) if fills else building
+    opened = g.buffer(-d, join_style='mitre').buffer(d, join_style='mitre')
+    cuts = [p for p in pieces(g.difference(opened)) if jog(p)]
+    if cuts:
+        g = g.difference(unary_union(cuts))
+    if discs and not g.is_empty:
+        D = BITE * scale
+        slim = g.buffer(-D, join_style='mitre').buffer(D, join_style='mitre')
+        bumps = g.difference(slim).intersection(unary_union([c.buffer(1.0) for c in discs]))
+        if not bumps.is_empty:
+            g = g.difference(bumps)
+    return g if not g.is_empty else building
+
+
+def fit(face, scale, quad=False, boxed=False):
+    face = fill_slits(face, scale)
+    # a round opening drops the notches narrower than 2 x OPEN: a cabinet or bench drawn
+    # against a wall, the door leaf's closure chord, a column's bite
+    # ... but a pocket behind a desk that connects through a narrow neck is still the room:
+    # the pieces the opening keeps are grown back over the face, so only the thin parts go
+    opened = face.buffer(-OPEN * scale).buffer(OPEN * scale)
+    pieces = [p for p in (opened.geoms if isinstance(opened, MultiPolygon) else [opened]) if p.area >= POCKET_MIN * scale * scale]
+    if pieces:
+        kept = unary_union(pieces)
+        # the thin parts the opening removed: a neck joining two kept pieces (the gap between
+        # a desk and the wall) comes back, a spike touching one piece (a stroke) does not
+        thin = face.difference(kept.buffer(0.01))
+        necks = [t for t in (thin.geoms if hasattr(thin, 'geoms') else [thin])
+                 if not t.is_empty and sum(t.distance(p) < 0.1 for p in pieces) >= 2]
+        g = biggest(unary_union([kept] + necks).buffer(0.05).buffer(-0.05))
+        g = biggest(face.intersection(g.buffer(OPEN * scale + 0.6)))
+        g = biggest(g.buffer(-1.0 * scale).buffer(1.0 * scale))
+    else:
+        g = face
+    if g.is_empty or g.area < 0.5 * face.area:
+        g = face
+    if GROW:
+        g = biggest(g.buffer(GROW * scale, join_style='mitre', mitre_limit=3.0))
+    g = valid(merge_collinear(biggest(g.simplify(SIMPLIFY * scale))), face)
+    if g.area <= 0 or len(g.exterior.coords) < 4:
+        return face
+    # most rooms have four walls, not always at right angles: four lines fitted through the
+    # boundary replace a notched or many-cornered shape when they still cover the room and
+    # fill nothing bigger than a notch (a credenza against the wall, a column's bite). A
+    # bowed wall (a curved facade, the kitchen's bay) leaves far more outside and keeps its
+    # traced curve.
+    rect = g.minimum_rotated_rectangle
+    if boxed:
+        return rect if rect.area > 0 else g
+    def fits(cand):
+        if cand is None or cand.area <= 0:
+            return False
+        covers = largest_piece(g.difference(cand)) <= SLIVER_MAX * scale * scale
+        filled = cand.difference(g)
+        fills = largest_piece(filled) <= max(NOTCH_MAX, min(NOTCH_SHARE * g.area, NOTCH_CAP)) * scale * scale and filled.area <= NOTCH_TOTAL * g.area
+        return covers and fills
+    # the rectangle first (it is the exact answer for most rooms), four fitted walls for the
+    # rooms whose walls are not at right angles
+    if fits(rect):
+        return rect
+    four = four_walls(g, scale)
+    if fits(four):
+        return four
+    if quad and four is not None:  # four walls by the floor config: one of them may bow
+        return bowed_walls(four, g, scale)
+    # the simplest polygon that still is the room: coarser tolerances while the shape holds
+    for tol in (1.0, 2.0, 3.0, 4.0):
+        s = valid(biggest(g.simplify(tol * scale)), g)
+        if iou(s, g) >= 0.97 and len(s.exterior.coords) < len(g.exterior.coords):
+            g = s
+    return g
+
+
+POCKETS_TAKEN = set()  # ids of faces absorbed into a room as furniture pockets
+
+
+def absorb_pockets(faces, owners, tree, ext_ids, scale, max_room, ext_geoms=None, furniture=None):
+    """{owner key: room face grown over its pockets}. A pocket is an unlabelled face below
+    POCKET_MAX that touches (across a stroke) one labelled room and no other face of room
+    size, and holds furniture: the inside of a desk, a cabinet, a bench drawn against the
+    wall. An empty cavity (a chase, a wedge behind a partition) stays out of the room.
+    `ext_geoms` maps an exterior face to its true shape (the building is a hole in it; the
+    hole-filled face would touch everything); `furniture` is an STRtree of furniture points."""
+    # a pocket touches its room across a single stroke (3 pt painted); a wall is two strokes
+    # and wider, so neighbours across a wall do not count
+    reach = 2 * BUF * scale + 0.3
+    labelled = {id(f): key for key, (f, _) in owners.items()}
+    ext_geoms = ext_geoms or {}
+    out = {}
+    for f in faces:
+        if id(f) in labelled or id(f) in ext_ids or f.area > POCKET_MAX * scale * scale:
+            continue
+        if furniture is not None and not any(f.contains(furniture.geometries[i]) for i in furniture.query(f)):
+            continue
+        zone = f.buffer(reach)
+        touching = [faces[i] for i in tree.query(zone) if faces[i] is not f and ext_geoms.get(id(faces[i]), faces[i]).intersects(zone)]
+        rooms_touched = {labelled[id(t)] for t in touching if id(t) in labelled}
+        big_touched = [t for t in touching if id(t) not in labelled and (t.area >= POCKET_MAX * scale * scale or id(t) in ext_ids)]
+        if len(rooms_touched) != 1 or big_touched:
+            continue
+        key = rooms_touched.pop()
+        out.setdefault(key, []).append(f)
+        POCKETS_TAKEN.add(id(f))
+    grown = {}
+    for key, pockets in out.items():
+        f = owners[key][0]
+        g = unary_union([f.buffer(reach / 2 + 0.1)] + [p.buffer(reach / 2 + 0.1) for p in pockets]).buffer(-(reach / 2 + 0.1))
+        g = biggest(g)
+        grown[key] = Polygon(g.exterior) if not g.is_empty and g.area > f.area else f
+    return grown
+
+
+def largest_piece(g):
+    """Area of the largest connected piece of a geometry."""
+    if g.is_empty:
+        return 0.0
+    return max(p.area for p in (g.geoms if hasattr(g, 'geoms') else [g]))
+
+
+def four_walls(g, scale):
+    """Four walls fitted to the shape: boundary points are assigned to the nearest side of the
+    minimum rectangle, a line is fitted through each side's points (outliers, such as a notch,
+    dropped once), and the corners are the intersections of neighbouring lines. None when a
+    side has too few points or two lines run parallel."""
+    rect = g.minimum_rotated_rectangle
+    if rect.area <= 0 or len(rect.exterior.coords) != 5:
+        return None
+    R = np.array(rect.exterior.coords[:-1], float)
+    sides = [LineString([R[i], R[(i + 1) % 4]]) for i in range(4)]
+    boundary = g.exterior
+    ts = np.arange(0, boundary.length, 2.0 * scale)
+    P = np.array([boundary.interpolate(t).coords[0] for t in ts])
+    if len(P) < 12:
+        return None
+    which = np.argmin([[side.distance(Point(p)) for side in sides] for p in P], axis=1)
+    # the opening rounded the corners: points near a rectangle corner belong to no wall
+    near_corner = np.array([min(math.dist(p, c) for c in R) <= CORNER_ZONE * scale for p in P])
+    centre = np.array(g.centroid.coords[0])
+    lines = []
+    for k in range(4):
+        Q = P[(which == k) & ~near_corner]
+        if len(Q) < 3:
+            return None
+        # the wall is the outermost run of points: anything standing well inside the fitted
+        # line (a credenza, a bench, the door leaf) is dropped and the line fitted again
+        for _ in range(3):
+            c = Q.mean(0)
+            u = np.linalg.svd(Q - c)[2][0]
+            nrm = np.array([-u[1], u[0]])
+            if np.dot(nrm, c - centre) < 0:
+                nrm = -nrm  # pointing out of the room
+            depth = (Q - c) @ nrm
+            keep = depth >= -FIT_OUTLIER * scale
+            if keep.sum() < 3 or keep.all():
+                break
+            Q = Q[keep]
+        lines.append((c, u, (Q @ u).max() - (Q @ u).min()))
+    out = []
+    for k in range(4):
+        (c1, u1, _), (c2, u2, _) = lines[k - 1], lines[k]
+        A = np.array([u1, -u2]).T
+        if abs(np.linalg.det(A)) < 1e-3:
+            return None
+        t = np.linalg.solve(A, c2 - c1)
+        out.append(c1 + u1 * t[0])
+    # every wall must be supported by points along most of its length: a three-walled room
+    # gives the rectangle a fourth side with almost no points, and the corner shoots off
+    for k in range(4):
+        side = np.linalg.norm(out[(k + 1) % 4] - out[k])
+        if side < 4.0 * scale or lines[k][2] < WALL_SUPPORT * side:
+            return None
+    q = Polygon(out)
+    return q if q.is_valid and q.area > 0 else None
+
+
+def bowed_walls(four, g, scale):
+    """A four-walled polygon whose walls take an arc where the traced boundary lies on a
+    circle that bows away from the straight wall (the social kitchen's bay). Furniture
+    standing against the wall pushes boundary points into the room; those are dropped from
+    the circle fit. The corners of a bowed wall move onto its circle along the neighbouring
+    walls; the result is a polygon as vertices, with a bulge on each bowed wall."""
+    corners = [np.array(p, float) for p in four.exterior.coords[:-1]]
+    centroid = np.array(g.centroid.coords[0])
+    boundary = g.exterior
+    ts = np.arange(0, boundary.length, 2.0 * scale)
+    P = np.array([boundary.interpolate(t).coords[0] for t in ts])
+    chords = [LineString([corners[i], corners[(i + 1) % 4]]) for i in range(4)]
+    nearest = np.argmin([[ch.distance(Point(p)) for ch in chords] for p in P], axis=1)
+    arcs = {}
+    for i in range(4):
+        a, b = corners[i], corners[(i + 1) % 4]
+        d = b - a
+        L = np.linalg.norm(d)
+        if L < 1e-6:
+            continue
+        u, nrm = d / L, np.array([-d[1], d[0]]) / L
+        along = (P - a) @ u
+        sag = (P - a) @ nrm
+        on = (nearest == i) & (along > 0.05 * L) & (along < 0.95 * L) & (np.abs(sag) <= min(0.2 * L, BOW_REACH * scale))
+        Q = P[on]
+        if len(Q) < 10:
+            continue
+        ok = None
+        for _ in range(4):
+            (cx, cy), r, res = fit_circle(Q)
+            if r < L / 2 or r > 20 * L:
+                break
+            radial = np.hypot(Q[:, 0] - cx, Q[:, 1] - cy) - r
+            room_side = np.sign(np.hypot(*(centroid - [cx, cy])) - r) or 1.0
+            inward = radial * room_side > FIT_OUTLIER * scale  # standing in the room, off the wall
+            if not inward.any():
+                ok = ((cx, cy), r, res, Q)
+                break
+            if (~inward).sum() < 10:
+                break
+            Q = Q[~inward]
+        if ok is None:
+            continue
+        (cx, cy), r, res, Q = ok
+        span = (Q @ u).max() - (Q @ u).min()
+        if res > BOW_RES * scale or span < 0.6 * L:
+            continue
+        sagitta = r - math.sqrt(max(r * r - L * L / 4, 0))
+        if sagitta < CURVE_SAG * scale:
+            continue
+        arcs[i] = ((cx, cy), r)
+    if not arcs:
+        return [[round(float(x), 1), round(float(y), 1)] for x, y in corners]
+    # corners next to an arc slide along the straight neighbour onto the circle
+    moved = list(corners)
+    for i, ((cx, cy), r) in arcs.items():
+        for j, k in ((i, (i - 1) % 4), ((i + 1) % 4, (i + 1) % 4)):  # corner index, straight wall index
+            if k in arcs:
+                continue
+            c = corners[j]
+            far = corners[k] if k != j else corners[(k + 1) % 4]  # the far end of the straight wall
+            v = c - far
+            n = np.linalg.norm(v)
+            if n < 1e-6:
+                continue
+            v /= n
+            oc = far - np.array([cx, cy])
+            bq = 2 * np.dot(oc, v)
+            cq = np.dot(oc, oc) - r * r
+            disc = bq * bq - 4 * cq
+            if disc < 0:
+                continue
+            roots = [(-bq + sq) / 2 for sq in (math.sqrt(disc), -math.sqrt(disc))]
+            t = min(roots, key=lambda t: abs(t - n))
+            if abs(t - n) <= 0.5 * n:
+                moved[j] = far + v * t
+    out = []
+    for i in range(4):
+        x, y = moved[i]
+        if i in arcs:
+            (cx, cy), r = arcs[i]
+            a, b = moved[i], moved[(i + 1) % 4]
+            L = np.linalg.norm(b - a)
+            theta = 2 * math.asin(min(1.0, L / (2 * r)))
+            bulge = math.tan(theta / 4)
+            # the map bows a positive bulge to the right of travel (y down): the sign that puts
+            # the arc's midpoint on the far side from the circle's centre
+            d = b - a
+            nrm = np.array([-d[1], d[0]]) / (L or 1.0)
+            mid = (a + b) / 2
+            towards_centre = np.dot(nrm, np.array([cx, cy]) - mid)
+            bulge = bulge if towards_centre < 0 else -bulge
+            out.append([round(float(x), 1), round(float(y), 1), round(float(bulge), 4)])
+        else:
+            out.append([round(float(x), 1), round(float(y), 1)])
+    return out
+
+
+def wall_axis(poly, wall_tree, segs, scale):
+    """The direction (degrees, in (-45, 45]) of the walls drawn in and around a region: the
+    length-weighted mean direction of the wall strokes within its reach, taken modulo 90°
+    (a core's walls stand at right angles; the X marks on a shaft and the stall partitions
+    are short and cancel out). None when there is too little wall to tell."""
+    zone = poly.buffer(4.0 * scale)
+    hits = [segs[i] for i in wall_tree.query(zone) if segs[i].length >= 6.0 * scale and segs[i].intersects(zone)]
+    if sum(s.length for s in hits) < 40.0 * scale:
+        return None
+    cx = cy = 0.0
+    for s in hits:
+        (x0, y0), (x1, y1) = s.coords[0], s.coords[-1]
+        a = 4 * math.atan2(y1 - y0, x1 - x0)
+        cx += s.length * math.cos(a)
+        cy += s.length * math.sin(a)
+    return round(math.degrees(math.atan2(cy, cx)) / 4, 2)
+
+
+STAIR_TREAD = (15.0, 90.0)  # pt; a tread of the atrium stairs is a stroke this long
+STAIR_R = (0.55, 1.25)      # the treads lie between these radii of the atrium ellipse (its frame)
+STAIR_RADIAL = 30.0         # deg; a tread runs within this of the radial direction
+STAIR_NEAR = 14.0           # pt; a tread has two more within this, parallel to it
+STAIR_LANDING = 25.0        # pt; half the longest landing between two flights, closed over in the band
+
+
+def atrium_stairs(geom, cfg, scale):
+    """The stairs winding inside the atrium's rail (floors 2–4), one per side listed in the
+    floor's `atrium_stairs` (side, goes up/down, to which floor, which end is the top). Their
+    treads are the radial strokes between the opening and the rail that stand in a row of
+    parallel strokes; sorted around the atrium they fall into flights (a landing is a gap of
+    more than two treads). The stair is the band between the treads' inner and outer ends,
+    flight by flight, the landings filled; its centreline runs through the treads' midpoints
+    from the bottom of the stair to its top (the top is the north or south end, as given), the
+    way the arrow points for a stair going up, the other way for one going down."""
+    ellipse = cfg['stair_frame'] or cfg['atrium']  # the frame the treads are found in (floor 4 traces its opening instead)
+    if not ellipse or not cfg['atrium_stairs']:
+        return []
+    cx, cy, a, b, ang = ellipse
+    t = math.radians(ang)
+    c, s = math.cos(t), math.sin(t)
+
+    def frame(p):
+        dx, dy = p[0] - cx, p[1] - cy
+        return dx * c + dy * s, -dx * s + dy * c
+
+    def polar(p):
+        x, y = frame(p)
+        return math.degrees(math.atan2(y / b, x / a)) % 360, math.hypot(x / a, y / b)
+
+    segs = [(sg[0], sg[1], sg[2], sg[3]) for sg in geom['segs']]
+    for pl in geom.get('polylines', []):
+        pts = [p[:2] for p in pl]
+        segs += [(p[0], p[1], q[0], q[1]) for p, q in zip(pts, pts[1:])]
+    cand = []
+    for x0, y0, x1, y1 in segs:
+        L = math.dist((x0, y0), (x1, y1))
+        if not STAIR_TREAD[0] * scale <= L <= STAIR_TREAD[1] * scale:
+            continue
+        (a1, r1), (a2, r2) = polar((x0, y0)), polar((x1, y1))
+        if not (STAIR_R[0] <= min(r1, r2) and max(r1, r2) <= STAIR_R[1]) or abs(r1 - r2) < 0.06:
+            continue
+        mx, my = frame(((x0 + x1) / 2, (y0 + y1) / 2))
+        gx, gy = mx / a ** 2, my / b ** 2  # the radial direction (the ellipse's gradient)
+        fx0, fy0 = frame((x0, y0))
+        fx1, fy1 = frame((x1, y1))
+        cosang = abs(gx * (fx1 - fx0) + gy * (fy1 - fy0)) / ((math.hypot(gx, gy) * math.hypot(fx1 - fx0, fy1 - fy0)) or 1.0)
+        if math.degrees(math.acos(min(1.0, cosang))) > STAIR_RADIAL:
+            continue
+        inner, outer = ((x0, y0), (x1, y1)) if r1 < r2 else ((x1, y1), (x0, y0))
+        mean_ang = (a1 + a2) / 2 if abs(a1 - a2) < 180 else ((a1 + a2 + 360) / 2) % 360
+        cand.append({'ang': mean_ang, 'in': inner, 'out': outer, 'rin': min(r1, r2), 'rout': max(r1, r2), 'dir': math.atan2(y1 - y0, x1 - x0)})
+    mid = lambda q: ((q['in'][0] + q['out'][0]) / 2, (q['in'][1] + q['out'][1]) / 2)
+    mids = np.array([mid(q) for q in cand]) if cand else np.zeros((0, 2))
+    treads = []
+    for i, q in enumerate(cand):
+        near = [j for j in np.flatnonzero(np.linalg.norm(mids - mids[i], axis=1) < STAIR_NEAR * scale)
+                if j != i and abs(((cand[j]['dir'] - q['dir'] + math.pi / 2) % math.pi) - math.pi / 2) < math.radians(15)]
+        if len(near) >= 2:
+            treads.append(q)
+    treads.sort(key=lambda q: q['ang'])
+    clusters, cur = [], []
+    for q in treads:
+        if cur and q['ang'] - cur[-1]['ang'] > 25:
+            clusters.append(cur)
+            cur = []
+        cur.append(q)
+    if cur:
+        clusters.append(cur)
+    if len(clusters) > 1 and clusters[0][0]['ang'] + 360 - clusters[-1][-1]['ang'] <= 25:
+        clusters[0] = clusters.pop() + clusters[0]
+    out = []
+    for spec in cfg['atrium_stairs']:
+        side = spec['side']
+        found = [cl for cl in clusters if len(cl) >= 8 and ((np.mean([q['in'][0] for q in cl]) < cx) == (side == 'west'))]
+        if not found:
+            print(f'  atrium stair on the {side}: no treads found')
+            continue
+        cl = max(found, key=len)
+        # a tread the handrail's line cuts in two, or drawn twice (tread and nosing), is one
+        # stroke: strokes on one line (parallel, within 3 pt of it) that meet or overlap along
+        # it merge, the inner end the innermost, the outer the outermost
+        used = [False] * len(cl)
+        merged = []
+        for i, q in enumerate(cl):
+            if used[i]:
+                continue
+            used[i] = True
+            m = dict(q)
+            ux, uy = math.cos(m['dir']), math.sin(m['dir'])
+            along = lambda p: (p[0] - q['in'][0]) * ux + (p[1] - q['in'][1]) * uy
+            changed = True
+            while changed:
+                changed = False
+                lo_m, hi_m = sorted([along(m['in']), along(m['out'])])
+                for j, o in enumerate(cl):
+                    if used[j]:
+                        continue
+                    if abs(((o['dir'] - m['dir'] + math.pi / 2) % math.pi) - math.pi / 2) > math.radians(6):
+                        continue
+                    ox_, oy_ = mid(o)[0] - q['in'][0], mid(o)[1] - q['in'][1]
+                    if abs(ox_ * uy - oy_ * ux) > 3 * scale:
+                        continue
+                    lo_o, hi_o = sorted([along(o['in']), along(o['out'])])
+                    if lo_o > hi_m + 15 * scale or hi_o < lo_m - 15 * scale:
+                        continue
+                    used[j] = True
+                    changed = True
+                    if o['rin'] < m['rin']:
+                        m['in'], m['rin'] = o['in'], o['rin']
+                    if o['rout'] > m['rout']:
+                        m['out'], m['rout'] = o['out'], o['rout']
+            m['ang'] = polar(mid(m))[0]
+            merged.append(m)
+        cl = sorted(merged, key=lambda q: q['ang'])
+        # flights: runs of treads a pitch apart; a landing is a longer gap, but a gap longer
+        # than a landing can be separates the stair from strokes that are not its own
+        pitch = float(np.median([math.dist(mid(q0), mid(q1)) for q0, q1 in zip(cl, cl[1:])]))
+        flights, cur = [], [cl[0]]
+        for q0, q1 in zip(cl, cl[1:]):
+            if math.dist(mid(q0), mid(q1)) > 2.5 * pitch + 4 * scale:
+                flights.append(cur)
+                cur = []
+            cur.append(q1)
+        flights.append(cur)
+        chains, chain = [], [flights[0]]
+        for f0, f1 in zip(flights, flights[1:]):
+            if math.dist(mid(f0[-1]), mid(f1[0])) > 2.5 * STAIR_LANDING * scale:
+                chains.append(chain)
+                chain = []
+            chain.append(f1)
+        chains.append(chain)
+        flights = max(chains, key=lambda ch: sum(len(fl) for fl in ch))
+        cl = [q for fl in flights for q in fl]
+        # the band follows the atrium: the ellipse scaled to the treads' inner and outer ends
+        # (their median radii), from the first tread's angle to the last one's, cut square at
+        # both ends; the straight flights at the ends are drawn on that curve too
+        r_in = float(np.median([q['rin'] for q in cl]))
+        r_out = float(np.median([q['rout'] for q in cl]))
+        a0, a1 = cl[0]['ang'], cl[-1]['ang']
+        if a1 < a0:
+            a1 += 360
+
+        def on_ellipse(deg, r):
+            th = math.radians(deg)
+            x, y = r * a * math.cos(th), r * b * math.sin(th)
+            return (cx + x * c - y * s, cy + x * s + y * c)
+
+        n = max(12, int((a1 - a0) / 3))
+        outer = [on_ellipse(a0 + (a1 - a0) * k / n, r_out) for k in range(n + 1)]
+        inner = [on_ellipse(a0 + (a1 - a0) * k / n, r_in) for k in range(n + 1)]
+        g = Polygon(outer + inner[::-1]).buffer(0)
+        poly = ring(g, arcs=True, tol=2, dev=6, min_iou=0.98)
+        flights = 1 + sum(1 for q0, q1 in zip(cl, cl[1:]) if math.dist(mid(q0), mid(q1)) > 2.5 * pitch + 4 * scale)
+        line = LineString([on_ellipse(a0 + (a1 - a0) * k / n, (r_in + r_out) / 2) for k in range(n + 1)]).simplify(1.0 * scale)
+        if line.length > 24 * scale:
+            from shapely.ops import substring
+            line = substring(line, 8 * scale, line.length - 8 * scale)
+        pts = list(line.coords)
+        top_first = (pts[0][1] < pts[-1][1]) == (spec['top'] == 'north')  # smaller y is north on the sheet
+        if top_first:
+            pts = pts[::-1]  # bottom to top
+        if spec['goes'] == 'down':
+            pts = pts[::-1]
+        out.append({'id': f'atrium-stair-{side}', 'side': side, 'goes': spec['goes'], 'to': spec['to'],
+                    'polygon': poly, 'arrow': [[round(float(x), 1), round(float(y), 1)] for x, y in pts]})
+        print(f"  atrium stair on the {side}: {len(cl)} treads in {flights} flights, going {spec['goes']} to floor {spec['to']}")
+    return out
+
+
+def atrium_polygon(cfg, n=48):
+    if not cfg['atrium']:
+        return None
+    cx, cy, a, b, ang = cfg['atrium']
+    t = math.radians(ang)
+    pts = []
+    for k in range(n):
+        u = 2 * math.pi * k / n
+        x, y = a * math.cos(u), b * math.sin(u)
+        pts.append((cx + x * math.cos(t) - y * math.sin(t), cy + x * math.sin(t) + y * math.cos(t)))
+    return Polygon(pts)
+
+
+def desks(geom, scale, zones):
+    """Worksurface quads standing in the open areas (`zones`); the furniture of an enclosed
+    room is not drawn."""
+    if zones.is_empty:
+        return []
+    zone = zones.buffer(DESK_REACH * scale)
+    out = []
+    for q in geom.get('quads', []):
+        pts, width, black = q[:4], q[4], q[5]
+        if not black or width < DESK_WIDTH:
+            continue
+        sides = [math.dist(pts[i], pts[(i + 1) % 4]) for i in range(4)]
+        s, l = min(sides), max(sides)
+        if not (DESK_SHORT[0] * scale <= s <= DESK_SHORT[1] * scale and DESK_LONG[0] * scale <= l <= DESK_LONG[1] * scale):
+            continue
+        if zone.contains(Point(sum(p[0] for p in pts) / 4, sum(p[1] for p in pts) / 4)):
+            out.append([[round(x, 1), round(y, 1)] for x, y in pts])
+    return out
+
+
+DESK_PAD = 8.0  # pt; an open office drawn around its desks reaches this far past them (the chairs)
+
+
+DESK_NOTCH = 2.0  # pt; a room standing in a desk block is cut out with this much room around it
+DESK_NOTCH_JOIN = 8.0  # pt; rooms standing in a desk block within a wall's width of each other share one cut-out
+DESK_NOTCH_MIN = 150.0  # pt²; a room has to reach this far into a desk block to be cut out of it
+
+
+def desk_block(g, geom, scale, others, rooms=()):
+    """An open office as the rectangle around its desks: the worksurfaces standing in the area
+    (not in another patch area), bounded in the frame of their own direction (desks are set
+    parallel to the walls) and widened by DESK_PAD for the chairs. A room standing in the block
+    (`rooms`: polygons) is cut out as its bounding box in that frame, DESK_NOTCH around it, so
+    the notch has right angles. None without two desks."""
+    quads = []
+    for q in desks(geom, scale, g):
+        c = Point(sum(p[0] for p in q) / 4, sum(p[1] for p in q) / 4)
+        if g.contains(c) and not any(o.contains(c) for o in others):
+            quads.append(q)
+    if len(quads) < 2:
+        return None
+    angles = []
+    for q in quads:
+        e = max(zip(q, q[1:] + q[:1]), key=lambda s: math.dist(*s))
+        a = math.degrees(math.atan2(e[1][1] - e[0][1], e[1][0] - e[0][0]))
+        angles.append(((a + 45) % 90) - 45)  # along or across the room: one frame
+    a = math.radians(float(np.median(angles)))
+    u = np.array([math.cos(a), math.sin(a)])
+    v = np.array([-u[1], u[0]])
+    Q = np.array([p for q in quads for p in q], float)
+    pa, pb = Q @ u, Q @ v
+    pad = DESK_PAD * scale
+    lo_a, hi_a, lo_b, hi_b = pa.min() - pad, pa.max() + pad, pb.min() - pad, pb.max() + pad
+    block = Polygon([u * lo_a + v * lo_b, u * hi_a + v * lo_b, u * hi_a + v * hi_b, u * lo_a + v * hi_b])
+    # the rooms standing in the block, each as its box in the desks' frame; boxes that meet
+    # or stand a wall apart become one (a huddle room and the closet beside it), so the notch is simple
+    n = DESK_NOTCH * scale
+    boxes = []
+    for room in rooms:  # a room merely brushed by the block is left to the emitter's overlap pass
+        if room.intersects(block) and room.intersection(block).area >= DESK_NOTCH_MIN * scale * scale:
+            R = np.array(room.exterior.coords)
+            ra, rb = R @ u, R @ v
+            boxes.append([ra.min() - n, ra.max() + n, rb.min() - n, rb.max() + n])
+    merged = True
+    m = DESK_NOTCH_JOIN * scale
+    while merged and len(boxes) > 1:
+        merged = False
+        for i in range(len(boxes)):
+            for j in range(i + 1, len(boxes)):
+                a0, a1, b0, b1 = boxes[i]
+                c0, c1, d0, d1 = boxes[j]
+                if a0 <= c1 + m and c0 <= a1 + m and b0 <= d1 + m and d0 <= b1 + m:
+                    boxes[i] = [min(a0, c0), max(a1, c1), min(b0, d0), max(b1, d1)]
+                    boxes.pop(j)
+                    merged = True
+                    break
+            if merged:
+                break
+    for a0, a1, b0, b1 in boxes:
+        notch = Polygon([u * a0 + v * b0, u * a1 + v * b0, u * a1 + v * b1, u * a0 + v * b1])
+        block = biggest(block.difference(notch))
+    return block
+
+
+def align_walls(rooms, scale):
+    """Walls of rooms standing in a row, on one line. Every room's rectangle is fitted on its
+    own, so the fronts of a row of offices come out a few tenths of a point and of a degree
+    apart. Walls of different rooms that face the same way, run within ALIGN_TURN of parallel,
+    lie within ALIGN_TOL of one line and continue each other (across at most ALIGN_GAP) are
+    put on their common line, length-weighted; the corners move to the intersections. A room
+    is left alone when that changes it by more than a sliver."""
+    quads = [r for r in rooms if len(r['polygon']) == 4 and all(len(p) == 2 for p in r['polygon']) and not r.get('holes')]
+    edges = []  # (room index, edge index, p, q, outward normal, offset, start, end along the direction)
+    for ri, r in enumerate(quads):
+        P = np.array(r['polygon'], float)
+        poly = Polygon(P)
+        if not poly.is_valid or poly.area <= 0:
+            continue
+        c = np.array(poly.centroid.coords[0])
+        for k in range(4):
+            p, q = P[k], P[(k + 1) % 4]
+            d = q - p
+            L = np.linalg.norm(d)
+            if L < 1e-6:
+                continue
+            u = d / L
+            n = np.array([-u[1], u[0]])
+            if np.dot(n, (p + q) / 2 - c) < 0:
+                n = -n
+            edges.append((ri, k, p, q, n, float(np.dot(n, p)), L))
+    parent = list(range(len(edges)))
+
+    def find(i):
+        while parent[i] != i:
+            parent[i] = parent[parent[i]]
+            i = parent[i]
+        return i
+    cos_turn = math.cos(math.radians(ALIGN_TURN))
+    for i in range(len(edges)):
+        ri, _, p1, q1, n1, o1, _ = edges[i]
+        u1 = np.array([n1[1], -n1[0]])
+        a1 = sorted((np.dot(u1, p1), np.dot(u1, q1)))
+        for j in range(i + 1, len(edges)):
+            rj, _, p2, q2, n2, o2, _ = edges[j]
+            if rj == ri or np.dot(n1, n2) < cos_turn:
+                continue
+            if abs(np.dot(n1, p2) - o1) > ALIGN_TOL * scale or abs(np.dot(n1, q2) - o1) > ALIGN_TOL * scale:
+                continue
+            a2 = sorted((np.dot(u1, p2), np.dot(u1, q2)))
+            if a2[0] > a1[1] + ALIGN_GAP * scale or a1[0] > a2[1] + ALIGN_GAP * scale:
+                continue
+            parent[find(i)] = find(j)
+    groups = {}
+    for i in range(len(edges)):
+        groups.setdefault(find(i), []).append(i)
+    line_of = {}  # edge index -> (point on the line, unit normal)
+    for members in groups.values():
+        if len({edges[i][0] for i in members}) < 2:
+            continue
+        n = sum(edges[i][4] * edges[i][6] for i in members)
+        n /= np.linalg.norm(n)
+        o = sum(np.dot(n, (edges[i][2] + edges[i][3]) / 2) * edges[i][6] for i in members) / sum(edges[i][6] for i in members)
+        for i in members:
+            line_of[i] = (n * o, n)
+    moved = 0
+    by_room = {}
+    for i, e in enumerate(edges):
+        by_room.setdefault(e[0], {})[e[1]] = i
+    for ri, ks in by_room.items():
+        if len(ks) < 4 or not any(ks[k] in line_of for k in ks):
+            continue
+        lines = []
+        for k in range(4):
+            e = edges[ks[k]]
+            if ks[k] in line_of:
+                lines.append(line_of[ks[k]])
+            else:
+                lines.append((e[2], e[4]))
+        corners = []
+        for k in range(4):
+            (c1, n1), (c2, n2) = lines[k - 1], lines[k]
+            A = np.array([n1, n2])
+            if abs(np.linalg.det(A)) < 1e-6:
+                break
+            corners.append(np.linalg.solve(A, [np.dot(n1, c1), np.dot(n2, c2)]))
+        if len(corners) < 4:
+            continue
+        old = Polygon(quads[ri]['polygon'])
+        new = Polygon(corners)
+        if new.is_valid and new.area > 0 and iou(old, new) >= 0.97:
+            quads[ri]['polygon'] = [[round(float(x), 1), round(float(y), 1)] for x, y in corners]
+            moved += 1
+    return moved
+
+
+DOOR_MIN = 12.0     # pt; passage doors are 3' and wider (chairs and booth seats are drawn as quarter circles too)
+DOOR_SIDE = 6.0     # pt; how far from the doorway each side of it is sampled
+DOOR_MENTION = 25.0  # pt; a door the patches mention is the detected swing nearest its point, this close
+SHAFT_LEN = (30.0, 130.0)  # pt; the diagonals of an elevator shaft's X mark
+SHAFT_SIDE = (25.0, 90.0)  # pt; the sides of the box the X spans
+
+
+def doors_of(w, rooms, unl, outlines, wall_tree, segs, scale, mentions=()):
+    """The doors: every passage door (between corridors and open areas: not a room's own door,
+    not into a core, not an entrance), plus the doors the patches mention, which are shown on
+    the map. A door is {'a', 'b': the doorway along the wall (hinge to strike, or hinge to
+    hinge for a pair of leaves), 'o': where the leaf hinged at a stands open, 'leaves', 'show',
+    'name', 'snap': the room whose edge the marker is drawn on}. The strike is the arc end that lies on the walls; the other end is the open leaf."""
+    best = {}
+    for cx, cy, r, p0, p1 in w['doors']:  # a swing drawn twice (polyline and bézier) counts once
+        k = (round(cx / scale), round(cy / scale))
+        if k not in best or r > best[k][2]:
+            best[k] = (cx, cy, r, p0, p1)
+    zones = [('room', r['id'], prep(Polygon(flatten(r['polygon'])).buffer(1.5 * scale))) for r in rooms if r['kind'] != 'open' and len(r['polygon']) >= 3]
+    zones += [('core', None, prep(Polygon(flatten(u['polygon'])).buffer(1.5 * scale))) for u in unl]
+    zones += [('open', r['id'], prep(Polygon(flatten(r['polygon'])).buffer(1.5 * scale))) for r in rooms if r['kind'] == 'open' and len(r['polygon']) >= 3]
+    inside = [prep(Polygon(flatten(o))) for o in outlines]
+
+    def side(p):
+        pt = Point(p)
+        for kind, rid, g in zones:
+            if g.contains(pt):
+                return kind, rid
+        return ('corridor', None) if any(b.contains(pt) for b in inside) else ('outside', None)
+
+    def wall_dist(p):
+        return segs[wall_tree.nearest(Point(p))].distance(Point(p))
+
+    leaves = []  # (hinge, strike, open end, passage?)
+    for cx, cy, r, p0, p1 in best.values():
+        if r < DOOR_MIN * scale:
+            continue
+        strike, leaf = (p0, p1) if wall_dist(p0) <= wall_dist(p1) else (p1, p0)
+        mx, my = (cx + strike[0]) / 2, (cy + strike[1]) / 2
+        dx, dy = strike[0] - cx, strike[1] - cy
+        n = math.hypot(dx, dy) or 1.0
+        nx, ny = -dy / n * DOOR_SIDE * scale, dx / n * DOOR_SIDE * scale
+        a, b = side((mx + nx, my + ny)), side((mx - nx, my - ny))
+        if a == b and a[0] == 'open':
+            continue  # a booth seat drawn as a quarter circle
+        leaves.append(((cx, cy), tuple(strike), tuple(leaf), not ({a[0], b[0]} & {'room', 'core', 'outside'})))
+    # two leaves hinged at opposite jambs that strike each other are one double door
+    used, doors = set(), []
+    for i, (h1, s1, o1, p1) in enumerate(leaves):
+        if i in used:
+            continue
+        j = next((j for j, (h2, s2, o2, p2) in enumerate(leaves) if j > i and j not in used
+                  and math.dist(s1, s2) <= 6 * scale and abs(math.dist(h1, s1) - math.dist(h2, s2)) <= 4 * scale
+                  and math.dist(h1, h2) >= 1.5 * math.dist(h1, s1)), None)
+        if j is not None:
+            used.add(j)
+            h2, s2, o2, p2 = leaves[j]
+            doors.append({'a': h1, 'b': h2, 'o': o1, 'leaves': 2, 'passage': p1 or p2})
+        else:
+            doors.append({'a': h1, 'b': s1, 'o': o1, 'leaves': 1, 'passage': p1})
+    mid = lambda d: Point((d['a'][0] + d['b'][0]) / 2, (d['a'][1] + d['b'][1]) / 2)
+    for x, y, name, *snap in mentions:  # a mentioned door is shown, with its name
+        near = min(doors, key=lambda d: mid(d).distance(Point(x, y)), default=None)
+        if near is None or mid(near).distance(Point(x, y)) > DOOR_MENTION * scale:
+            print(f'  door at ({x}, {y}) {name!r}: no swing within {DOOR_MENTION} pt')
+            continue
+        near['show'] = True
+        if name:
+            near['name'] = name
+        if snap and snap[0]:  # drawn on the edge of this room (the emitter moves it there)
+            near['snap'] = snap[0]
+    out = []
+    for d in doors:
+        if not (d['passage'] or d.get('show')):
+            continue
+        rec = {k: [round(d[k][0], 1), round(d[k][1], 1)] for k in 'abo'}
+        rec['leaves'] = d['leaves']
+        if d.get('show'):
+            rec['show'] = True
+        if d.get('name'):
+            rec['name'] = d['name']
+        if d.get('snap'):
+            rec['snap'] = d['snap']
+        out.append(rec)
+    return out
+
+
+def shaft_boxes(w, scale):
+    """Elevator shafts are drawn as a box with an X across it: two strokes of one length that
+    cross at their midpoints, roughly at right angles, whose four ends span a box of shaft
+    size. Returns the boxes ([x, y] x 4), for the emitter to draw the banks from."""
+    lo, hi = SHAFT_LEN[0] * scale, SHAFT_LEN[1] * scale
+    mids = {}
+    for a, b, c, d in w['walls']:
+        L = math.hypot(c - a, d - b)
+        if lo <= L <= hi:
+            mids.setdefault((round((a + c) / 2 / (3 * scale)), round((b + d) / 2 / (3 * scale))), []).append((a, b, c, d, L))
+    boxes = {}
+    with warnings.catch_warnings():
+        warnings.simplefilter('ignore', RuntimeWarning)
+        for ss in mids.values():
+            for i in range(len(ss)):
+                for j in range(i + 1, len(ss)):
+                    p, q = ss[i], ss[j]
+                    if abs(p[4] - q[4]) > 3 * scale:
+                        continue
+                    dp = math.degrees(math.atan2(p[3] - p[1], p[2] - p[0]))
+                    dq = math.degrees(math.atan2(q[3] - q[1], q[2] - q[0]))
+                    if not 60 <= abs((dp - dq + 90) % 180 - 90) <= 120:
+                        continue
+                    rect = MultiPoint([(p[0], p[1]), (p[2], p[3]), (q[0], q[1]), (q[2], q[3])]).minimum_rotated_rectangle
+                    if rect.geom_type != 'Polygon':
+                        continue
+                    pts = list(rect.exterior.coords)[:4]
+                    s1, s2 = math.dist(pts[0], pts[1]), math.dist(pts[1], pts[2])
+                    if min(s1, s2) < SHAFT_SIDE[0] * scale or max(s1, s2) > SHAFT_SIDE[1] * scale or max(s1, s2) > 1.6 * min(s1, s2):
+                        continue
+                    c = rect.centroid
+                    boxes[(round(c.x / scale), round(c.y / scale))] = [[round(float(x), 1), round(float(y), 1)] for x, y in pts]
+    return list(boxes.values())
+
+
+PIAZZA_GAP = 8.0       # pt; a piazza stops this far short of the atrium's rail
+RECT_IOU = 0.9         # an open office is one rectangle when that covers it this well ...
+RECT2_IOU = 0.9        # ... or two rectangles at right angles when they do this well (a looser pair only gets notched by its neighbours)
+OUTLINE_MERGE = 6.0    # deg; a facade's facets turning less than this (and not part of a curve) are one flat wall
+OUTLINE_JOG_LEN = 4.0  # pt; a step in a facade shorter than this between two stretches of one wall is dropped
+PIAZZA_SMOOTH = 12.0   # pt; a piazza's shape is rounded this hard (notches and bumps up to twice this go)
+PIAZZA_TOL = 6.0       # pt; ... then simplified this loosely (a tiny arc at a tip goes) ...
+PIAZZA_ARC_TOL = 4.0   # pt; ... and its curves fitted with arcs this loosely ...
+PIAZZA_ARC_DEV = 12.0  # pt; ... kept while they stray at most this far
+
+
+def smooth_hard(g, scale):
+    """A shape reduced to a few curves: a round closing then opening at PIAZZA_SMOOTH, which
+    fills the door and column notches, drops the bumps and rounds every corner."""
+    d = PIAZZA_SMOOTH * scale
+    t = g.buffer(d).buffer(-2 * d).buffer(d)
+    t = biggest(t) if isinstance(t, MultiPolygon) else t
+    return t if not t.is_empty and t.is_valid else g
+
+
+def rectangles(g, scale):
+    """An open office as one rectangle, or as two at right angles (an L, a T) when that covers
+    it at RECT_IOU: desks stand in blocks, and the odd angles of a clipped area are the
+    corridor's, not the room's. None when neither fits."""
+    from shapely.ops import split
+    rect = g.minimum_rotated_rectangle
+    if rect.geom_type != 'Polygon':
+        return None
+    iou = lambda a, b: a.intersection(b).area / a.union(b).area
+    if iou(rect, g) >= RECT_IOU:
+        return rect
+    pts = np.array(rect.exterior.coords[:4])
+    u = pts[1] - pts[0]
+    u = u / np.linalg.norm(u)
+    v = np.array([-u[1], u[0]])
+    P = np.array(g.exterior.coords)
+
+    def framed_box(part):
+        Q = np.array(part.exterior.coords)
+        qa, qb = Q @ u, Q @ v
+        return Polygon([u * qa.min() + v * qb.min(), u * qa.max() + v * qb.min(), u * qa.max() + v * qb.max(), u * qa.min() + v * qb.max()])
+    best = (RECT2_IOU, None)
+    c0 = np.array(g.centroid.coords[0])
+    for axis, other in ((u, v), (v, u)):
+        proj = P @ axis
+        lo, hi = proj.min(), proj.max()
+        for t in np.linspace(0.15, 0.85, 15):
+            c = lo + t * (hi - lo)
+            mid = axis * c + other * (c0 @ other)
+            cutter = LineString([mid + other * 1e4, mid - other * 1e4])
+            parts = [p for p in split(g, cutter).geoms if p.area > 1]
+            sides = [[p for p in parts if (np.array(p.representative_point().coords[0]) @ axis) < c], [p for p in parts if (np.array(p.representative_point().coords[0]) @ axis) >= c]]
+            if not sides[0] or not sides[1]:
+                continue
+            boxes = unary_union([framed_box(unary_union(side).convex_hull).buffer(0.3, join_style='mitre') for side in sides]).buffer(-0.3, join_style='mitre')
+            if boxes.geom_type != 'Polygon':
+                continue
+            score = iou(boxes, g)
+            if score > best[0]:
+                best = (score, boxes)
+    return best[1]
+
+
+def drop_jogs(pts, jog, deg):
+    """A step of a point or two between two stretches of one wall (a panel joint, a change of
+    line weight) is no corner: an edge shorter than `jog` whose neighbours run within `deg` of
+    each other is replaced by its midpoint, which the facet merge then drops."""
+    n = len(pts)
+    out, skip = [], set()
+    for i in range(n):
+        if i in skip:
+            continue
+        p, q = np.array(pts[i]), np.array(pts[(i + 1) % n])
+        if np.linalg.norm(q - p) < jog:
+            a, b = p - np.array(pts[i - 1]), np.array(pts[(i + 2) % n]) - q
+            if np.linalg.norm(a) > 1e-9 and np.linalg.norm(b) > 1e-9:
+                ang = abs(math.degrees(math.atan2(a[0] * b[1] - a[1] * b[0], np.dot(a, b))))
+                if ang < deg:
+                    out.append(tuple((p + q) / 2))
+                    skip.add((i + 1) % n)
+                    continue
+        out.append(pts[i])
+    return out
+
+
+def merge_facets(poly, deg=OUTLINE_MERGE, curve=12.0, run=3, jog=0.0):
+    """A facade drawn as facets a few degrees apart is one flat wall: vertices turning less
+    than `deg` are dropped, except inside a curve, a run of at least `run` turns the same way
+    each under `curve` degrees, which the arc fit needs whole."""
+    pts = list(poly.exterior.coords[:-1])
+    if jog > 0:
+        pts = drop_jogs(pts, jog, deg)
+    n = len(pts)
+    if n < 5:
+        return poly
+    turns = []
+    for i in range(n):
+        p, q, r = np.array(pts[i - 1]), np.array(pts[i]), np.array(pts[(i + 1) % n])
+        a, b = q - p, r - q
+        na, nb = np.linalg.norm(a), np.linalg.norm(b)
+        if na < 1e-9 or nb < 1e-9:
+            turns.append(0.0)
+            continue
+        ang = math.degrees(math.atan2(a[0] * b[1] - a[1] * b[0], np.dot(a, b)))
+        turns.append(ang)
+    in_curve = [False] * n
+    for i in range(n):
+        sgn = 1 if turns[i] > 0 else -1
+        j, k = i, 0
+        while k < n and abs(turns[j % n]) < curve and abs(turns[j % n]) > 0.3 and (1 if turns[j % n] > 0 else -1) == sgn:
+            j += 1
+            k += 1
+        if k >= run:
+            for m in range(i, j):
+                in_curve[m % n] = True
+    out = [pts[i] for i in range(n) if in_curve[i] or abs(turns[i]) >= deg]
+    return Polygon(out) if len(out) >= 3 else poly
+
+
+def guided(g, pts):
+    """A room clipped to the circle through three points read off the sheet (the wall's
+    curve), on the side the room's centre lies."""
+    (x1, y1), (x2, y2), (x3, y3) = [p[:2] for p in pts]
+    A = np.array([[2 * x1, 2 * y1, 1], [2 * x2, 2 * y2, 1], [2 * x3, 2 * y3, 1]], float)
+    b = np.array([x1 * x1 + y1 * y1, x2 * x2 + y2 * y2, x3 * x3 + y3 * y3], float)
+    try:
+        cx, cy, c = np.linalg.solve(A, b)
+    except np.linalg.LinAlgError:
+        return g
+    r = math.sqrt(c + cx * cx + cy * cy)
+    disc = Point(cx, cy).buffer(r, 128)
+    cen = g.centroid
+    t = g.intersection(disc) if disc.contains(cen) else g.difference(disc)
+    t = biggest(t) if isinstance(t, MultiPolygon) else t
+    return t if not t.is_empty and t.is_valid else g
+
+
+def kitchen_shape(g, scale):
+    """A social kitchen as the plan reads it: straight parallel sides (the office rows beside
+    it), pulled in a little, and its ends as curves. The sides are the two longest edges
+    after a hard rounding; the room is clipped to the strip between them, moved in 2 pt."""
+    t = smooth_hard(g, scale)
+    sim = t.simplify(3.0 * scale)
+    pts = list(sim.exterior.coords[:-1])
+    edges = sorted(((math.dist(a, b), a, b) for a, b in zip(pts, pts[1:] + pts[:1])), reverse=True)[:2]
+    if len(edges) < 2:
+        return t
+    (_, a1, b1), (_, a2, b2) = edges
+    d1 = np.array(b1) - np.array(a1); d1 /= np.linalg.norm(d1)
+    d2 = np.array(b2) - np.array(a2); d2 /= np.linalg.norm(d2)
+    if d1 @ d2 < 0:
+        d2 = -d2
+    d = d1 + d2; d /= np.linalg.norm(d)
+    n = np.array([-d[1], d[0]])
+    c = np.array(t.centroid.coords[0])
+    o1 = float((np.array(a1) - c) @ n); o2 = float((np.array(a2) - c) @ n)
+    lo, hi = sorted((o1, o2))
+    lo += 2.0 * scale; hi -= 2.0 * scale
+    big = 1e4
+    strip = Polygon([c + n * lo - d * big, c + n * lo + d * big, c + n * hi + d * big, c + n * hi - d * big])
+    r = t.intersection(strip)
+    r = biggest(r) if isinstance(r, MultiPolygon) else r
+    return r if not r.is_empty and r.is_valid and r.area > 0.6 * t.area else t
+
+
+def tidy_open(g, scale, discs):
+    """An open-plan area clipped to the free space carries the drafting along its walls (the
+    door chords, column bites and mullion boxes) as the building outline does: the same tidy."""
+    t = biggest(tidy_outline(g, scale, discs))
+    return t if not t.is_empty and t.is_valid else g
+
+
+def build(fid, workdir):
+    cfg = FLOORS[fid]
+    prefix = os.path.join(workdir, cfg['pdf'])
+    w = json.load(open(prefix + '_walls.json'))
+    geom = json.load(open(prefix + '_geom.json'))
+    patches = load_patches(fid)
+    scale = w['scale']
+    faces, exterior = free_space(w, patches)
+    # a covered plaza or a roof deck the floor config marks exterior
+    for sx, sy in cfg['exterior']:
+        for f in faces:
+            if f.contains(Point(sx, sy)) and all(f is not e for e, _ in exterior):
+                exterior.append((f, f))
+    tree = STRtree(faces)
+    ext_ids = {id(f) for f, _ in exterior}
+    ext_geoms = {id(f): p for f, p in exterior}
+    outside = unary_union([p for _, p in exterior]) if exterior else Polygon()
+    global COLUMNS
+    discs = [Point(cx, cy).buffer(r + 0.5) for cx, cy, r in w['columns']]
+    COLUMNS = STRtree(discs) if discs else None
+    inside = unary_union([f for f in faces if id(f) not in ext_ids])  # the free space of the building
+
+    def face_at(x, y):
+        p = Point(x, y)
+        hits = [faces[i] for i in tree.query(p) if faces[i].contains(p) and faces[i].area >= MIN_LABEL_FACE * scale * scale]
+        if hits:
+            return min(hits, key=lambda f: f.area)
+        near = [(faces[i].distance(p), faces[i]) for i in tree.query(p.buffer(LABEL_REACH * scale))]
+        near = [(d, f) for d, f in near if d <= LABEL_REACH * scale and id(f) not in ext_ids and f.area >= MIN_LABEL_FACE * scale * scale]
+        return min(near, key=lambda t: (t[0], t[1].area))[1] if near else None
+
+    max_room = MAX_ROOM * scale * scale
+    rooms, owners, open_labels, patched = [], {}, [], []
+    for lab in labels(geom, cfg):
+        rid = lab['id']
+        if rid in cfg['hand']:
+            poly = cfg['hand'][rid]
+            name = lab['name']
+            if isinstance(poly, tuple):
+                name, poly = poly
+            rooms.append({'id': rid, 'name': name, 'kind': 'room', 'polygon': [[float(x), float(y)] for x, y in poly], 'hand': True})
+            continue
+        f = face_at(lab['x'], lab['y'])
+        if f is None:
+            print(f'  {rid}: label on no face')
+            continue
+        if rid in patches['areas']:
+            patched.append((lab, f))
+        elif f.area > max_room or id(f) in ext_ids:
+            open_labels.append((lab, f))
+        else:
+            owners.setdefault(id(f), (f, []))[1].append(lab)
+    # a desk or cabinet drawn against a wall encloses a pocket of its own: a small face that
+    # touches exactly one room (and nothing else of room size) is part of that room
+    furniture = [Point(sum(p[0] for p in q[:4]) / 4, sum(p[1] for p in q[:4]) / 4) for q in geom.get('quads', [])]
+    furniture += [Point((s[0] + s[2]) / 2, (s[1] + s[3]) / 2) for s in geom['segs'] if s[5] and s[7]]  # black, furniture-flagged
+    pockets = absorb_pockets(faces, owners, tree, ext_ids, scale, max_room, ext_geoms, STRtree(furniture) if furniture else None)
+    for key in list(owners):
+        f, labs = owners[key]
+        if key in pockets:
+            owners[key] = (pockets[key], labs)
+    for f, labs in owners.values():
+        if len(labs) == 1:
+            parts = [f]
+        else:
+            # two numbers in one face: a partition the sheet leaves open, or a merged pair.
+            # Split by nearest label and report it for a patch line.
+            print(f"  one face holds {', '.join(l['id'] for l in labs)}: split by nearest label (add a patch line if they are rooms)")
+            cells = voronoi_polygons(MultiPoint([(l['x'], l['y']) for l in labs]), extend_to=f.buffer(10))
+            parts = [biggest(c.intersection(f)) for c in cells.geoms]
+            parts = [next(p for p in parts if p.contains(Point(l['x'], l['y'])) or p.distance(Point(l['x'], l['y'])) < 1) for l in labs]
+        for lab, part in zip(labs, parts):
+            rid = lab['id']
+            room = {'id': rid, 'name': lab['name'], 'kind': 'room', 'area': int(part.area),
+                    'polygon': (ring(kitchen_shape(fill_slits(part, scale), scale), arcs=True, tol=PIAZZA_ARC_TOL, dev=PIAZZA_ARC_DEV, min_iou=0.9)
+                                if 'SOCIAL KITCHEN' in lab['name'].upper() and len(part.exterior.coords) > 12 else
+                                shape(part, scale, quad=rid in cfg['quad'], boxed=rid in cfg['box']))}
+            if len(labs) > 1:
+                room['shared'] = [l['id'] for l in labs if l is not lab]
+            rooms.append(room)
+    # hand polygons whose room has no label on this sheet (the Lower Level's teaching rooms,
+    # the lecture halls) carry their name in the config: ('name', polygon)
+    drawn_ids = {r['id'] for r in rooms}
+    for rid, poly in cfg['hand'].items():
+        if rid in drawn_ids:
+            continue
+        if isinstance(poly, tuple):
+            name, poly = poly
+            rooms.append({'id': rid, 'name': name, 'kind': 'room', 'polygon': [[float(x), float(y)] for x, y in poly], 'hand': True})
+        else:
+            print(f'  hand polygon for {rid}: no such label')
+    for r in rooms:
+        if r.get('hand'):
+            r['area'] = int(Polygon(flatten(r['polygon'])).area)
+            del r['hand']
+    # a boxed room (a lab whose benches are drawn as walls) is its minimum rectangle, which
+    # may reach over a neighbour: it gives up whatever another room already covers
+    others = {r['id']: Polygon(flatten(r['polygon'])).buffer(0) for r in rooms}
+    for r in rooms:
+        if r['id'] not in cfg['box']:
+            continue
+        g = others[r['id']]
+        for oid, og in others.items():
+            if oid != r['id'] and oid not in cfg['box'] and g.intersects(og) and g.intersection(og).area > 2:
+                g = biggest(g.difference(og.buffer(0.5)))
+        if g is not others[r['id']]:
+            r['polygon'] = ring(g)
+            others[r['id']] = g
+    # patch areas: the polygon clipped to the free space of the label's face (an open office
+    # in the corridor network, a booth whose label stands outside its open front), minus the
+    # rooms already placed. Open-plan kinds carry the 'open plan' tag; a booth is a room.
+    placed = Polygon()
+    ell_atrium = atrium_polygon(cfg)  # the piazzas keep off it
+    for lab, f in patched:
+        rid = lab['id']
+        kind = 'open' if category(lab['name'], rid) in OPEN_KINDS or 'PIAZZA' in lab['name'].upper() else 'room'
+        drawn = patches['areas'][rid]
+        g = Polygon(flatten(drawn)).buffer(0)
+        if kind == 'open':  # an open-plan area stops at the walls and at the rooms standing in it
+            g = g.intersection(inside.buffer(BUF * scale, join_style='mitre'))
+        g = biggest(g.difference(placed))
+        if g.is_empty:
+            print(f'  {rid}: patch area lies outside its face')
+            continue
+        # a traced room reaching over the area (a lab box whose open side faces a workspace)
+        # gives the area up: it becomes a hole in, or a bite out of, that room
+        for r in rooms:
+            rg = Polygon(flatten(r['polygon']), [flatten(h) for h in r.get('holes', [])]).buffer(0)
+            if rg.intersects(g) and rg.intersection(g).area > 0.5 * g.area:
+                cut = biggest(rg.difference(g))
+                r['polygon'] = ring(cut)
+                holes = [[[round(float(x), 1), round(float(y), 1)] for x, y in h.coords[:-1]] for h in cut.interiors if Polygon(h).area >= 20]
+                if holes:
+                    r['holes'] = holes
+                elif 'holes' in r:
+                    del r['holes']
+        # a room drawn by hand keeps its vertices (and arcs) as given; an open area takes the
+        # clip, without the drafting along its walls and with its curves as arcs
+        g_holes = g  # the rooms standing in an open area stay its holes whatever shape it takes
+        if kind == 'room' and g.area >= 0.95 * Polygon(flatten(drawn)).area:
+            poly = [list(pt) for pt in drawn]
+        elif kind == 'open' and rid in cfg['box']:  # an open office that is a plain block
+            g = g.minimum_rotated_rectangle
+            poly = ring(g)
+        elif kind == 'open' and rid in cfg['desk_box'] and (blk := desk_block(
+                g, geom, scale, [Polygon(flatten(a)).buffer(0) for k, a in patches['areas'].items() if k != rid],
+                [Polygon(flatten(r['polygon'])).buffer(0) for r in rooms if r['kind'] == 'room' and len(r['polygon']) >= 3])) is not None:
+            g = blk  # an open office drawn as the block around its desks, parallel to them
+            g_holes = g
+            poly = ring(g)
+        elif kind == 'open' and rid in cfg['asis'] and g.area >= 0.95 * Polygon(flatten(drawn)).area:
+            # an open area drawn as a few walls by hand, which the free space all but fills:
+            # as given (fitted rectangles would put a corner off the wall it was drawn on)
+            poly = [list(pt) for pt in drawn]
+        elif kind == 'open' and 'PIAZZA' in lab['name'].upper():
+            if rid in patches['guides']:  # the wall-side curve as given: a circle through three points
+                g = guided(g, patches['guides'][rid])
+            # the piazzas are a few curves: rounded hard, kept off the atrium's rail (so the
+            # inner curve is the rail's), then arcs fitted loosely
+            g = smooth_hard(g, scale)
+            if ell_atrium is not None:
+                g = biggest(g.difference(ell_atrium.buffer(PIAZZA_GAP * scale)))
+            poly = ring(merge_collinear(valid(Polygon(g.exterior).simplify(PIAZZA_TOL * scale), Polygon(g.exterior))),
+                        arcs=True, tol=PIAZZA_ARC_TOL, dev=PIAZZA_ARC_DEV, min_iou=0.9)
+        elif kind == 'open':
+            g = tidy_open(g, scale, discs)
+            g_holes = g
+            blocks = rectangles(Polygon(g.exterior), scale)
+            if blocks is not None:  # desks stand in blocks: one rectangle, or two at right angles
+                g = blocks
+                poly = ring(merge_collinear(g.simplify(0.3)))
+            else:
+                poly = ring(merge_collinear(valid(Polygon(g.exterior).simplify(OUTLINE_TOL * scale), Polygon(g.exterior))),
+                            arcs=True, tol=OUTLINE_ARC_TOL, dev=OUTLINE_ARC_DEV, min_iou=0.99)
+        else:
+            poly = ring(g)
+        room = {'id': rid, 'name': lab['name'], 'kind': kind, 'area': int(g.area), 'polygon': poly}
+        holes = [[[round(float(x), 1), round(float(y), 1)] for x, y in h.coords[:-1]] for h in g_holes.interiors if Polygon(h).area >= 20]
+        if holes and kind == 'open':
+            room['holes'] = holes
+        rooms.append(room)
+        placed = placed.union(g)
+    for lab, f in open_labels:
+        if category(lab['name'], lab['id']) != 'circulation':
+            print(f"  {lab['id']} {lab['name']!r}: label in the open (face {int(f.area)} pt²), no patch area")
+    aligned = align_walls(rooms, scale)
+    # the building: the border minus the outside; its boundary is the outline
+    building = box(*BORDER).difference(outside).buffer(-BUF * scale, join_style='mitre', mitre_limit=2.0)  # back to the strokes' centres
+    building = tidy_outline(building, scale, discs)
+    pieces = sorted((list(building.geoms) if isinstance(building, MultiPolygon) else [building]), key=lambda p: -p.area)
+    # a piece of the building holds rooms; the legend box and the north arrow do not
+    room_points = [Point(Polygon(flatten(r['polygon'])).representative_point()) for r in rooms if len(r['polygon']) >= 3]
+    pieces = [p for p in pieces if p.area >= max_room / 10 and any(p.contains(q) for q in room_points)]
+    # a fine tolerance keeps the corners and leaves the curved facades enough vertices for arcs
+    outlines = [ring(merge_facets(merge_collinear(valid(biggest(Polygon(p.exterior).simplify(OUTLINE_TOL * scale)), Polygon(p.exterior))), jog=OUTLINE_JOG_LEN * scale),
+                     arcs=True, tol=OUTLINE_ARC_TOL, dev=OUTLINE_ARC_DEV, min_iou=0.99) for p in pieces]
+    # faces nobody labelled: cores, restrooms, stairs, closets, for floors.py's `named` list
+    labelled = set(owners)
+    min_room = cfg['min_room'] if 'min_room' in cfg else MIN_ROOM * scale * scale  # a configured minimum is in the sheet's own points
+    spare = [f for f in faces if id(f) not in labelled and id(f) not in ext_ids and id(f) not in POCKETS_TAKEN and f.area <= max_room
+             and not any(f.contains(Point(l['x'], l['y'])) for l, _ in open_labels + patched)]
+    # Hatched floors, stair treads, elevator X marks and stall partitions chop a core into
+    # cells: cells below room size that touch across a stroke are merged back together and
+    # into the room-sized face they touch (the stalls into the restroom); room-sized faces
+    # never merge with each other (the shafts of a bank stay apart).
+    reach = BUF * scale + CELL_GAP
+    small = [f for f in spare if f.area < min_room * CELL_MAX]
+    big = [f for f in spare if f.area >= min_room * CELL_MAX]
+    merged = []
+    blobs = []
+    if small:
+        joined = unary_union([f.buffer(reach) for f in small])
+        blobs = list(joined.geoms) if isinstance(joined, MultiPolygon) else [joined]
+    big_tree = STRtree(big)
+    taken = set()
+    grown = {id(f): [f] for f in big}
+    for k, blob in enumerate(blobs):
+        hits = [big[i] for i in big_tree.query(blob) if big[i].intersects(blob)]
+        if hits:  # the blob joins the room-sized face it touches most
+            host = max(hits, key=lambda f: f.intersection(blob).area)
+            grown[id(host)].append(Polygon(blob.exterior).buffer(-reach, join_style='mitre'))
+            taken.add(k)
+    for f in big:
+        parts = [p for p in grown[id(f)] if not p.is_empty]
+        g = f if len(parts) == 1 else biggest(unary_union([p.buffer(reach / 2 + 0.1) for p in parts]).buffer(-(reach / 2 + 0.1)))
+        merged.append(Polygon(g.exterior) if not g.is_empty else f)
+    for k, blob in enumerate(blobs):
+        if k in taken:
+            continue
+        g = biggest(Polygon(blob.exterior).buffer(-reach, join_style='mitre'))
+        if not g.is_empty and g.area >= min_room:
+            merged.append(g)
+    unl = []
+    for f in merged:
+        if f.area < min_room:
+            continue
+        c = f.representative_point()
+        unl.append({'area': int(f.area), 'x': round(c.x, 1), 'y': round(c.y, 1), 'polygon': shape(f, scale)})
+    # a patch area for a named region (a restroom, a shaft, a stair, by the id floors.py
+    # names it) is that region, drawn as given; whatever was traced inside it goes
+    number_re = re.compile(cfg['number_re'])
+    label_ids = {l['id'] for l in labels(geom, cfg)}
+    for rid, drawn in patches['areas'].items():
+        if number_re.match(rid) or rid in label_ids:
+            continue
+        g = Polygon(flatten(drawn)).buffer(0)
+        if g.is_empty or rid == 'terrace':
+            continue
+        unl = [u for u in unl if g.intersection(Polygon(flatten(u['polygon'])).buffer(0)).area <= 0.5 * u['area']]
+        c = g.representative_point()
+        unl.append({'area': int(g.area), 'x': round(c.x, 1), 'y': round(c.y, 1), 'polygon': [list(pt) for pt in drawn], 'named': rid})
+    ell = atrium_polygon(cfg)
+    if ell is not None:
+        # the stairs winding down inside the atrium's rail chop the opening into pieces: the
+        # configured ellipse replaces whatever was traced inside it
+        unl = [u for u in unl if not ell.contains(Point(u['x'], u['y']))]
+        c = ell.centroid
+        unl.append({'area': int(ell.area), 'atrium': True, 'x': round(c.x, 1), 'y': round(c.y, 1), 'polygon': ring(ell)})
+    # a roof terrace (floor 5): the paved deck around the indoor blocks. The pavers' hatching
+    # chops the deck into cells; the cells joined across their strokes form the deck, holes and
+    # all (the blocks: their rooms, their corridors, the skylight), and a seed on any paver
+    # takes the deck it stands on (a seed on unhatched paving takes that face). A `terrace`
+    # patch area only bounds the deck (the roof edge).
+    if cfg['terrace']:
+        reach = BUF * scale + CELL_GAP
+        cells = [f for f in faces if id(f) not in ext_ids and f.area < DECK_CELL * scale * scale]
+        joined = unary_union([f.buffer(reach) for f in cells]) if cells else Polygon()
+        blobs = list(joined.geoms) if isinstance(joined, MultiPolygon) else ([joined] if not joined.is_empty else [])
+        decks = []
+        for sx, sy in cfg['terrace']:
+            p = Point(sx, sy)
+            hit = [b for b in blobs if b.contains(p)]
+            if hit:
+                decks.append(max(hit, key=lambda b: b.area).buffer(-reach, join_style='mitre'))
+            else:
+                hit = [f for f in faces if id(f) not in ext_ids and f.contains(p)]
+                if hit:
+                    decks.append(min(hit, key=lambda f: f.area))
+        if decks:
+            # the parts meet across a stroke (the edge between two pavings): joined like the cells
+            deck = unary_union([d.buffer(reach) for d in decks]).buffer(-reach, join_style='mitre')
+            if 'terrace' in patches['areas']:
+                deck = deck.intersection(Polygon(flatten(patches['areas']['terrace'])).buffer(0))
+            deck = biggest(deck) if isinstance(deck, MultiPolygon) else deck
+            deck = tidy_open(deck, scale, discs)
+            # the cell steps along the walkways rounded off, and a small gap kept from the walls
+            rounded = deck.buffer(DECK_ROUND * scale).buffer(-2 * DECK_ROUND * scale).buffer(DECK_ROUND * scale).buffer(-DECK_GAP * scale)
+            rounded = biggest(rounded) if isinstance(rounded, MultiPolygon) else rounded
+            if not rounded.is_empty and rounded.is_valid and rounded.area > 0.8 * deck.area:
+                deck = rounded
+            if cfg['atrium']:  # the skylight's panes are cells too: the configured ellipse is cut out
+                deck = biggest(deck.difference(ell.buffer(WALL * scale)))
+            paved = prep(deck)
+            unl = [u for u in unl if not paved.contains(Point(u['x'], u['y']))]  # paver cells are not regions to name
+            outer = Polygon(deck.exterior)
+            room = {'id': 'terrace', 'name': 'ROOF TERRACE', 'kind': 'open', 'area': int(deck.area),
+                    'polygon': ring(merge_collinear(valid(outer.simplify(OUTLINE_TOL * scale), outer)),
+                                    arcs=True, tol=PIAZZA_ARC_TOL, dev=PIAZZA_ARC_DEV, min_iou=0.95)}
+            holes = [ring(valid(Polygon(h).simplify(SIMPLIFY * scale), Polygon(h))) for h in deck.interiors if Polygon(h).area >= 200]
+            if holes:
+                room['holes'] = holes
+            rooms.append(room)
+            for f in cells:
+                if paved.contains(f.representative_point()):
+                    ext_ids.add(id(f))  # the deck's cells are not regions to name
+    # entrances: door hinges on the outline
+    exits = []
+    if cfg['exits'] and outlines:
+        conts = [Polygon(flatten(o)).exterior for o in outlines]
+        for cx, cy, r, p0, p1 in w['doors']:
+            mx, my = (p0[0] + p1[0]) / 2 - cx, (p0[1] + p1[1]) / 2 - cy
+            n = math.hypot(mx, my) or 1.0
+            mid = (cx + r * mx / n, cy + r * my / n)
+            at = ((mid[0] + cx) / 2, (mid[1] + cy) / 2)
+            d = min(c.distance(Point(at)) for c in conts)
+            if d <= EXIT_DIST * scale and all(math.dist(at, e) > 40 * scale for e in exits):
+                exits.append([round(at[0], 1), round(at[1], 1)])
+    # the walls' direction around every region, for the emitter to square the cores to
+    # (a shaft's X marks and a restroom's stalls mislead a fit to the region's own outline)
+    segs = [LineString([(a, b), (c, e)]) for a, b, c, e in w['walls']]
+    wall_tree = STRtree(segs)
+    for u in unl:
+        ax = wall_axis(Polygon(flatten(u['polygon'])), wall_tree, segs, scale)
+        if ax is not None:
+            u['axis'] = ax
+    open_zones = unary_union([Polygon(flatten(r['polygon']), [flatten(h) for h in r.get('holes', [])]).buffer(0)
+                              for r in rooms if r['kind'] == 'open' and len(r['polygon']) >= 3])
+    out = {'floor': fid, 'rooms': rooms, 'outlines': outlines, 'unlabelled': unl, 'exits': exits, 'desks': desks(geom, scale, open_zones),
+           'atrium_stairs': atrium_stairs(geom, cfg, scale),
+           'doors': doors_of(w, rooms, unl, outlines, wall_tree, segs, scale, patches['doors']), 'shafts': shaft_boxes(w, scale)}
+    json.dump(out, open(prefix + '_rooms.json', 'w'))
+    n_open = sum(r['kind'] == 'open' for r in rooms)
+    print(f"floor {fid}: {len(rooms) - n_open} enclosed rooms, {n_open} open areas ({len(open_labels)} labels in the open), "
+          f"{len(outlines)} outline(s), {len(unl)} unlabelled regions, {len(exits)} exits, {len(out['desks'])} desks, {len(out['doors'])} doors, {len(out['shafts'])} shafts, "
+          f"{aligned} rooms aligned with their neighbours")
+    return out
+
+
+if __name__ == '__main__':
+    build(sys.argv[1], sys.argv[2])
