@@ -310,3 +310,31 @@ the counts on any floor.
   from the walls and shared by the three floors (`SW_CORE_RESTROOMS`). Floor 1 traces the
   full room on its own and confirmed the rectangle.
 - **Hidden on floor 5.** Three closets and shafts of the south bar are `blank` points.
+
+## Findings from the seventh review (2026-10-30)
+
+- **The atrium stairs.** Floors 2–4 have stairs winding inside the atrium's rail: one on the
+  west (2 → 3), two on floor 3, one on the east (3 → 4). Their treads are the radial strokes
+  between the opening and the rail standing in rows of parallel strokes; a tread the handrail
+  cuts in two, or drawn with its nosing, is merged along its line. Sorted around the atrium
+  the treads fall into flights (a landing is a gap of more than two treads), and strokes a
+  long way off are not the stair's. The stair is the flights' strips plus the landings; the
+  arrow along it is the treads' midpoints smoothed. The direction is read from the break
+  lines on the lower floors (the floor below shows the stair cut where it passes the ceiling
+  plane): the west stair rises from its south end, the east one from its north end. The map
+  draws each as a solid band over the atrium with an arrow and an Up/Down label at its head;
+  the atrium is exempt from the overlap pass under its stairs. Floor 4 traces its atrium
+  from the opening, so `stair_frame` gives it floor 3's rail ellipse for the detection.
+- **Open offices around their desks.** `desk_box`: the rectangle around the worksurfaces
+  standing in the patch area (not another area's), in the desks' own frame, 8 pt out for
+  the chairs (3360, 3340, 4340). 3340 no longer cuts into 3330.
+- **Facade jogs.** The south facade of floor 4 is drawn in panels with 2 pt steps at the
+  joints; `drop_jogs` removes an edge shorter than 4 pt between two stretches of one wall.
+- **Captions.** A numbered room of 10 000 pt² or more whose name is not generic shows the
+  name under its number (4310 Masters Student Work Space, the labs, meeting rooms,
+  classrooms). 3397 is renamed ERSO IT Help Desk (`rename`, with ERSO as an acronym).
+- **Copy rooms** carry a printer icon, drawn when the room is big enough for it.
+- **3350** is drawn from its patch area with its right side 10 pt further left and its south
+  tip 30 pt shorter, bulges kept.
+- **About.** The dialog names the Barbara and Gerson Bakar Gateway and CDSS, states the
+  WCAG 2.2 AA target with a contact, and has an Info button that swaps in the Info dialog.

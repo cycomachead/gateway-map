@@ -527,6 +527,173 @@ def wall_axis(poly, wall_tree, segs, scale):
     return round(math.degrees(math.atan2(cy, cx)) / 4, 2)
 
 
+STAIR_TREAD = (15.0, 90.0)  # pt; a tread of the atrium stairs is a stroke this long
+STAIR_R = (0.55, 1.25)      # the treads lie between these radii of the atrium ellipse (its frame)
+STAIR_RADIAL = 30.0         # deg; a tread runs within this of the radial direction
+STAIR_NEAR = 14.0           # pt; a tread has two more within this, parallel to it
+STAIR_LANDING = 25.0        # pt; half the longest landing between two flights, closed over in the band
+
+
+def atrium_stairs(geom, cfg, scale):
+    """The stairs winding inside the atrium's rail (floors 2–4), one per side listed in the
+    floor's `atrium_stairs` (side, goes up/down, to which floor, which end is the top). Their
+    treads are the radial strokes between the opening and the rail that stand in a row of
+    parallel strokes; sorted around the atrium they fall into flights (a landing is a gap of
+    more than two treads). The stair is the band between the treads' inner and outer ends,
+    flight by flight, the landings filled; its centreline runs through the treads' midpoints
+    from the bottom of the stair to its top (the top is the north or south end, as given), the
+    way the arrow points for a stair going up, the other way for one going down."""
+    ellipse = cfg['stair_frame'] or cfg['atrium']  # the frame the treads are found in (floor 4 traces its opening instead)
+    if not ellipse or not cfg['atrium_stairs']:
+        return []
+    cx, cy, a, b, ang = ellipse
+    t = math.radians(ang)
+    c, s = math.cos(t), math.sin(t)
+
+    def frame(p):
+        dx, dy = p[0] - cx, p[1] - cy
+        return dx * c + dy * s, -dx * s + dy * c
+
+    def polar(p):
+        x, y = frame(p)
+        return math.degrees(math.atan2(y / b, x / a)) % 360, math.hypot(x / a, y / b)
+
+    segs = [(sg[0], sg[1], sg[2], sg[3]) for sg in geom['segs']]
+    for pl in geom.get('polylines', []):
+        pts = [p[:2] for p in pl]
+        segs += [(p[0], p[1], q[0], q[1]) for p, q in zip(pts, pts[1:])]
+    cand = []
+    for x0, y0, x1, y1 in segs:
+        L = math.dist((x0, y0), (x1, y1))
+        if not STAIR_TREAD[0] * scale <= L <= STAIR_TREAD[1] * scale:
+            continue
+        (a1, r1), (a2, r2) = polar((x0, y0)), polar((x1, y1))
+        if not (STAIR_R[0] <= min(r1, r2) and max(r1, r2) <= STAIR_R[1]) or abs(r1 - r2) < 0.06:
+            continue
+        mx, my = frame(((x0 + x1) / 2, (y0 + y1) / 2))
+        gx, gy = mx / a ** 2, my / b ** 2  # the radial direction (the ellipse's gradient)
+        fx0, fy0 = frame((x0, y0))
+        fx1, fy1 = frame((x1, y1))
+        cosang = abs(gx * (fx1 - fx0) + gy * (fy1 - fy0)) / ((math.hypot(gx, gy) * math.hypot(fx1 - fx0, fy1 - fy0)) or 1.0)
+        if math.degrees(math.acos(min(1.0, cosang))) > STAIR_RADIAL:
+            continue
+        inner, outer = ((x0, y0), (x1, y1)) if r1 < r2 else ((x1, y1), (x0, y0))
+        mean_ang = (a1 + a2) / 2 if abs(a1 - a2) < 180 else ((a1 + a2 + 360) / 2) % 360
+        cand.append({'ang': mean_ang, 'in': inner, 'out': outer, 'rin': min(r1, r2), 'rout': max(r1, r2), 'dir': math.atan2(y1 - y0, x1 - x0)})
+    mid = lambda q: ((q['in'][0] + q['out'][0]) / 2, (q['in'][1] + q['out'][1]) / 2)
+    mids = np.array([mid(q) for q in cand]) if cand else np.zeros((0, 2))
+    treads = []
+    for i, q in enumerate(cand):
+        near = [j for j in np.flatnonzero(np.linalg.norm(mids - mids[i], axis=1) < STAIR_NEAR * scale)
+                if j != i and abs(((cand[j]['dir'] - q['dir'] + math.pi / 2) % math.pi) - math.pi / 2) < math.radians(15)]
+        if len(near) >= 2:
+            treads.append(q)
+    treads.sort(key=lambda q: q['ang'])
+    clusters, cur = [], []
+    for q in treads:
+        if cur and q['ang'] - cur[-1]['ang'] > 25:
+            clusters.append(cur)
+            cur = []
+        cur.append(q)
+    if cur:
+        clusters.append(cur)
+    if len(clusters) > 1 and clusters[0][0]['ang'] + 360 - clusters[-1][-1]['ang'] <= 25:
+        clusters[0] = clusters.pop() + clusters[0]
+    out = []
+    for spec in cfg['atrium_stairs']:
+        side = spec['side']
+        found = [cl for cl in clusters if len(cl) >= 8 and ((np.mean([q['in'][0] for q in cl]) < cx) == (side == 'west'))]
+        if not found:
+            print(f'  atrium stair on the {side}: no treads found')
+            continue
+        cl = max(found, key=len)
+        # a tread the handrail's line cuts in two, or drawn twice (tread and nosing), is one
+        # stroke: strokes on one line (parallel, within 3 pt of it) that meet or overlap along
+        # it merge, the inner end the innermost, the outer the outermost
+        used = [False] * len(cl)
+        merged = []
+        for i, q in enumerate(cl):
+            if used[i]:
+                continue
+            used[i] = True
+            m = dict(q)
+            ux, uy = math.cos(m['dir']), math.sin(m['dir'])
+            along = lambda p: (p[0] - q['in'][0]) * ux + (p[1] - q['in'][1]) * uy
+            changed = True
+            while changed:
+                changed = False
+                lo_m, hi_m = sorted([along(m['in']), along(m['out'])])
+                for j, o in enumerate(cl):
+                    if used[j]:
+                        continue
+                    if abs(((o['dir'] - m['dir'] + math.pi / 2) % math.pi) - math.pi / 2) > math.radians(6):
+                        continue
+                    ox_, oy_ = mid(o)[0] - q['in'][0], mid(o)[1] - q['in'][1]
+                    if abs(ox_ * uy - oy_ * ux) > 3 * scale:
+                        continue
+                    lo_o, hi_o = sorted([along(o['in']), along(o['out'])])
+                    if lo_o > hi_m + 15 * scale or hi_o < lo_m - 15 * scale:
+                        continue
+                    used[j] = True
+                    changed = True
+                    if o['rin'] < m['rin']:
+                        m['in'], m['rin'] = o['in'], o['rin']
+                    if o['rout'] > m['rout']:
+                        m['out'], m['rout'] = o['out'], o['rout']
+            m['ang'] = polar(mid(m))[0]
+            merged.append(m)
+        cl = sorted(merged, key=lambda q: q['ang'])
+        # flights: runs of treads a pitch apart; a landing is a longer gap, but a gap longer
+        # than a landing can be separates the stair from strokes that are not its own
+        pitch = float(np.median([math.dist(mid(q0), mid(q1)) for q0, q1 in zip(cl, cl[1:])]))
+        flights, cur = [], [cl[0]]
+        for q0, q1 in zip(cl, cl[1:]):
+            if math.dist(mid(q0), mid(q1)) > 2.5 * pitch + 4 * scale:
+                flights.append(cur)
+                cur = []
+            cur.append(q1)
+        flights.append(cur)
+        chains, chain = [], [flights[0]]
+        for f0, f1 in zip(flights, flights[1:]):
+            if math.dist(mid(f0[-1]), mid(f1[0])) > 2.5 * STAIR_LANDING * scale:
+                chains.append(chain)
+                chain = []
+            chain.append(f1)
+        chains.append(chain)
+        flights = max(chains, key=lambda ch: sum(len(fl) for fl in ch))
+        cl = [q for fl in flights for q in fl]
+        # the band: each flight's strip between its treads' outer and inner ends, and the
+        # landings between flights, spanned from one flight's last tread to the next one's first
+        pieces = []
+        for fl in flights:
+            strip = Polygon([q['out'] for q in fl] + [q['in'] for q in fl][::-1]) if len(fl) >= 2 else None
+            if strip is None or not strip.is_valid or strip.is_empty:
+                strip = MultiPoint([q['in'] for q in fl] + [q['out'] for q in fl]).convex_hull.buffer(0.5 * scale)
+            pieces.append(strip)
+        for f0, f1 in zip(flights, flights[1:]):
+            pieces.append(MultiPoint([f0[-1]['in'], f0[-1]['out'], f1[0]['in'], f1[0]['out']]).convex_hull.buffer(0.5 * scale))
+        band = biggest(unary_union(pieces).buffer(0))
+        g = Polygon(band.exterior)
+        poly = ring(g.simplify(1.5 * scale), arcs=True, tol=4, dev=12, min_iou=0.95)
+        flights = len(flights)
+        mids = [mid(q) for q in cl]
+        smooth = [mids[0]] + [tuple(np.mean(mids[k - 1:k + 2], axis=0)) for k in range(1, len(mids) - 1)] + [mids[-1]]
+        line = LineString(smooth).simplify(2 * scale)
+        if line.length > 24 * scale:
+            from shapely.ops import substring
+            line = substring(line, 8 * scale, line.length - 8 * scale)
+        pts = list(line.coords)
+        top_first = (pts[0][1] < pts[-1][1]) == (spec['top'] == 'north')  # smaller y is north on the sheet
+        if top_first:
+            pts = pts[::-1]  # bottom to top
+        if spec['goes'] == 'down':
+            pts = pts[::-1]
+        out.append({'id': f'atrium-stair-{side}', 'side': side, 'goes': spec['goes'], 'to': spec['to'],
+                    'polygon': poly, 'arrow': [[round(float(x), 1), round(float(y), 1)] for x, y in pts]})
+        print(f"  atrium stair on the {side}: {len(cl)} treads in {flights} flights, going {spec['goes']} to floor {spec['to']}")
+    return out
+
+
 def atrium_polygon(cfg, n=48):
     if not cfg['atrium']:
         return None
@@ -558,6 +725,35 @@ def desks(geom, scale, zones):
         if zone.contains(Point(sum(p[0] for p in pts) / 4, sum(p[1] for p in pts) / 4)):
             out.append([[round(x, 1), round(y, 1)] for x, y in pts])
     return out
+
+
+DESK_PAD = 8.0  # pt; an open office drawn around its desks reaches this far past them (the chairs)
+
+
+def desk_block(g, geom, scale, others):
+    """An open office as the rectangle around its desks: the worksurfaces standing in the area
+    (not in another patch area), bounded in the frame of their own direction (desks are set
+    parallel to the walls) and widened by DESK_PAD for the chairs. None without two desks."""
+    quads = []
+    for q in desks(geom, scale, g):
+        c = Point(sum(p[0] for p in q) / 4, sum(p[1] for p in q) / 4)
+        if g.contains(c) and not any(o.contains(c) for o in others):
+            quads.append(q)
+    if len(quads) < 2:
+        return None
+    angles = []
+    for q in quads:
+        e = max(zip(q, q[1:] + q[:1]), key=lambda s: math.dist(*s))
+        a = math.degrees(math.atan2(e[1][1] - e[0][1], e[1][0] - e[0][0]))
+        angles.append(((a + 45) % 90) - 45)  # along or across the room: one frame
+    a = math.radians(float(np.median(angles)))
+    u = np.array([math.cos(a), math.sin(a)])
+    v = np.array([-u[1], u[0]])
+    Q = np.array([p for q in quads for p in q], float)
+    pa, pb = Q @ u, Q @ v
+    pad = DESK_PAD * scale
+    lo_a, hi_a, lo_b, hi_b = pa.min() - pad, pa.max() + pad, pb.min() - pad, pb.max() + pad
+    return Polygon([u * lo_a + v * lo_b, u * hi_a + v * lo_b, u * hi_a + v * hi_b, u * lo_a + v * hi_b])
 
 
 def align_walls(rooms, scale):
@@ -777,6 +973,7 @@ PIAZZA_GAP = 8.0       # pt; a piazza stops this far short of the atrium's rail
 RECT_IOU = 0.9         # an open office is one rectangle when that covers it this well ...
 RECT2_IOU = 0.9        # ... or two rectangles at right angles when they do this well (a looser pair only gets notched by its neighbours)
 OUTLINE_MERGE = 6.0    # deg; a facade's facets turning less than this (and not part of a curve) are one flat wall
+OUTLINE_JOG_LEN = 4.0  # pt; a step in a facade shorter than this between two stretches of one wall is dropped
 PIAZZA_SMOOTH = 12.0   # pt; a piazza's shape is rounded this hard (notches and bumps up to twice this go)
 PIAZZA_TOL = 6.0       # pt; ... then simplified this loosely (a tiny arc at a tip goes) ...
 PIAZZA_ARC_TOL = 4.0   # pt; ... and its curves fitted with arcs this loosely ...
@@ -835,11 +1032,35 @@ def rectangles(g, scale):
     return best[1]
 
 
-def merge_facets(poly, deg=OUTLINE_MERGE, curve=12.0, run=3):
+def drop_jogs(pts, jog, deg):
+    """A step of a point or two between two stretches of one wall (a panel joint, a change of
+    line weight) is no corner: an edge shorter than `jog` whose neighbours run within `deg` of
+    each other is replaced by its midpoint, which the facet merge then drops."""
+    n = len(pts)
+    out, skip = [], set()
+    for i in range(n):
+        if i in skip:
+            continue
+        p, q = np.array(pts[i]), np.array(pts[(i + 1) % n])
+        if np.linalg.norm(q - p) < jog:
+            a, b = p - np.array(pts[i - 1]), np.array(pts[(i + 2) % n]) - q
+            if np.linalg.norm(a) > 1e-9 and np.linalg.norm(b) > 1e-9:
+                ang = abs(math.degrees(math.atan2(a[0] * b[1] - a[1] * b[0], np.dot(a, b))))
+                if ang < deg:
+                    out.append(tuple((p + q) / 2))
+                    skip.add((i + 1) % n)
+                    continue
+        out.append(pts[i])
+    return out
+
+
+def merge_facets(poly, deg=OUTLINE_MERGE, curve=12.0, run=3, jog=0.0):
     """A facade drawn as facets a few degrees apart is one flat wall: vertices turning less
     than `deg` are dropped, except inside a curve, a run of at least `run` turns the same way
     each under `curve` degrees, which the arc fit needs whole."""
     pts = list(poly.exterior.coords[:-1])
+    if jog > 0:
+        pts = drop_jogs(pts, jog, deg)
     n = len(pts)
     if n < 5:
         return poly
@@ -1064,6 +1285,11 @@ def build(fid, workdir):
         elif kind == 'open' and rid in cfg['box']:  # an open office that is a plain block
             g = g.minimum_rotated_rectangle
             poly = ring(g)
+        elif kind == 'open' and rid in cfg['desk_box'] and (blk := desk_block(
+                g, geom, scale, [Polygon(flatten(a)).buffer(0) for k, a in patches['areas'].items() if k != rid])) is not None:
+            g = blk  # an open office drawn as the block around its desks, parallel to them
+            g_holes = g
+            poly = ring(g)
         elif kind == 'open' and rid in cfg['asis'] and g.area >= 0.95 * Polygon(flatten(drawn)).area:
             # an open area drawn as a few walls by hand, which the free space all but fills:
             # as given (fitted rectangles would put a corner off the wall it was drawn on)
@@ -1108,7 +1334,7 @@ def build(fid, workdir):
     room_points = [Point(Polygon(flatten(r['polygon'])).representative_point()) for r in rooms if len(r['polygon']) >= 3]
     pieces = [p for p in pieces if p.area >= max_room / 10 and any(p.contains(q) for q in room_points)]
     # a fine tolerance keeps the corners and leaves the curved facades enough vertices for arcs
-    outlines = [ring(merge_facets(merge_collinear(valid(biggest(Polygon(p.exterior).simplify(OUTLINE_TOL * scale)), Polygon(p.exterior)))),
+    outlines = [ring(merge_facets(merge_collinear(valid(biggest(Polygon(p.exterior).simplify(OUTLINE_TOL * scale)), Polygon(p.exterior))), jog=OUTLINE_JOG_LEN * scale),
                      arcs=True, tol=OUTLINE_ARC_TOL, dev=OUTLINE_ARC_DEV, min_iou=0.99) for p in pieces]
     # faces nobody labelled: cores, restrooms, stairs, closets, for floors.py's `named` list
     labelled = set(owners)
@@ -1242,6 +1468,7 @@ def build(fid, workdir):
     open_zones = unary_union([Polygon(flatten(r['polygon']), [flatten(h) for h in r.get('holes', [])]).buffer(0)
                               for r in rooms if r['kind'] == 'open' and len(r['polygon']) >= 3])
     out = {'floor': fid, 'rooms': rooms, 'outlines': outlines, 'unlabelled': unl, 'exits': exits, 'desks': desks(geom, scale, open_zones),
+           'atrium_stairs': atrium_stairs(geom, cfg, scale),
            'doors': doors_of(w, rooms, unl, outlines, wall_tree, segs, scale, patches['doors']), 'shafts': shaft_boxes(w, scale)}
     json.dump(out, open(prefix + '_rooms.json', 'w'))
     n_open = sum(r['kind'] == 'open' for r in rooms)

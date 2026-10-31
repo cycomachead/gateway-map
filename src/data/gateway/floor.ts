@@ -7,6 +7,8 @@ export type RoomExtra = {
   name?: string;
   label?: string;
   icon?: SpaceIcon;
+  caption?: string;
+  arrow?: XY[];
   description?: string;
   tags?: string[];
   holes?: XY[][];
@@ -52,6 +54,8 @@ export function makeSpace(floorId: string, wing: Wing | undefined, id: string, c
     name: extra.name ?? `${kindName[category] ?? 'Room'} ${id}`,
     label: extra.label ?? number ?? extra.name ?? id,
     ...(extra.icon ? { icon: extra.icon } : {}),
+    ...(extra.caption ? { caption: extra.caption } : {}),
+    ...(extra.arrow?.length ? { arrow: pts(extra.arrow) } : {}),
     floorId,
     category,
     wing,

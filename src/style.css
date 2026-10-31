@@ -216,6 +216,10 @@ button { font: inherit; color: inherit; }
 }
 .space__label-name { font-size: 8.5px; font-weight: 500; }
 .space__icon { fill: var(--text); pointer-events: none; }
+.space--stairway .space__shape { fill-opacity: 0.9; stroke-dasharray: none; }
+.space__arrow { fill: none; stroke: var(--text-muted); stroke-width: 2.5px; stroke-linecap: round; stroke-linejoin: round; pointer-events: none; }
+.arrowhead { fill: var(--text-muted); }
+.space.is-dimmed .space__arrow { opacity: 0.3; }
 .space.is-dimmed .space__icon { opacity: 0.3; }
 
 .poi__dot { fill: var(--surface); stroke: var(--floor-stroke); stroke-width: 1.5; }

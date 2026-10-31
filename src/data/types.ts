@@ -54,8 +54,8 @@ export const CATEGORY_LABELS: Record<SpaceCategory, string> = {
   circulation: 'Circulation',
 };
 
-/** Pictograms drawn above a room's label (the restroom signs, a stair). */
-export type SpaceIcon = 'man' | 'woman' | 'all-gender' | 'stairs';
+/** Pictograms drawn above a room's label (the restroom signs, a stair, a copy room's printer). */
+export type SpaceIcon = 'man' | 'woman' | 'all-gender' | 'stairs' | 'printer';
 
 export interface Space {
   id: string;
@@ -67,6 +67,10 @@ export interface Space {
   label?: string;
   /** A pictogram drawn above the label. */
   icon?: SpaceIcon;
+  /** The room's name, drawn small under the label; set for rooms large enough to carry it. */
+  caption?: string;
+  /** A direction drawn along the space (the way a stair goes), tail to head; the label sits at the head. */
+  arrow?: Point[];
   floorId: string;
   category: SpaceCategory;
   /** Closed outline; last point is implicitly joined to the first. Edges may be arcs via `bulge`. */

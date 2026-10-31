@@ -21,6 +21,7 @@ import sys
 from shapely.geometry import MultiPolygon, Point, Polygon
 
 from floors import FLOORS, category, display_name, wing
+from rooms import flatten_arcs
 
 PAD = 20.0
 FRAME_SLACK = 6.0  # pt; an outline may stick this far into the padding before the frame is recomputed
@@ -92,7 +93,9 @@ def turned_to(poly, axis, limit=TURN_LIMIT):
     Q = (P - c) @ R.T + c
     return [[round(float(x), 1), round(float(y), 1)] + list(p[2:]) for (x, y), p in zip(Q, poly)]
 # the pictogram the map draws above a room's label, by tag (restroom signs)
-ICONS = {'men': 'man', 'women': 'woman', 'all gender': 'all-gender', 'stairs': 'stairs'}
+ICONS = {'men': 'man', 'women': 'woman', 'all gender': 'all-gender', 'stairs': 'stairs', 'copy': 'printer'}
+CAPTION_AREA = 10000.0  # pt²; a numbered room this big carries its name under its number
+NO_CAPTION = {'Office', 'Open Office', 'Room', 'Piazza – Informal Collab'}  # names that say nothing the colour does not
 
 
 def with_icon(extra):
@@ -188,6 +191,9 @@ def emit_floor(fid, d, x0, y0, out_dir):
         name = display_name(r['name'], r['id']) if r['id'] != 'terrace' else 'Roof Terrace'
         w = wing(r['id'])
         extra = {'name': name, 'label': r['id'] if r['id'] != 'terrace' else 'Terrace'}
+        base = name[:-len(r['id'])].rstrip() if name.endswith(r['id']) else ''
+        if base and base not in NO_CAPTION and len(r['polygon']) >= 3 and Polygon(flatten_arcs(r['polygon'])).area >= CAPTION_AREA:
+            extra['caption'] = base  # a large room shows what it is, not just its number
         if r.get('holes'):
             extra['holes'] = r['holes']
         tags = [t for t in r['name'].lower().replace('/', ' ').split() if len(t) > 2 and t not in {'the', 'and'}]
@@ -196,7 +202,11 @@ def emit_floor(fid, d, x0, y0, out_dir):
         if tags:
             extra['tags'] = tags
         entries.append((0 if r['kind'] == 'room' else 2, w, rid, cat, r['polygon'], extra))
-    from shapely.geometry import MultiPolygon, Polygon
+    for st in d.get('atrium_stairs', []):  # the stairs winding inside the atrium's rail, with the way they go
+        up = st['goes'] == 'up'
+        extra = {'name': f"Atrium Stair {'up' if up else 'down'} to Floor {st['to']}", 'label': 'Up' if up else 'Down',
+                 'tags': ['atrium', 'stairs', 'up' if up else 'down'], 'arrow': st['arrow']}
+        entries.append((0, None, st['id'], 'circulation', st['polygon'], extra))
     placed = [Polygon(xy(r['polygon']), [xy(h) for h in r.get('holes', [])]).buffer(0) for r in d['rooms'] if r.get('polygon')]
     resolved = []
     # the elevator banks are drawn from their shafts' X marks, by seed, whatever the regions
@@ -283,7 +293,6 @@ def emit_floor(fid, d, x0, y0, out_dir):
         # Pockets inside a placed room (a table, a bench block) and slivers are left out.
         from shapely.ops import unary_union
         taken = unary_union(placed) if placed else Polygon()
-        from rooms import flatten_arcs
         inside = unary_union([Polygon(flatten_arcs(o)).buffer(0) for o in d['outlines']])
         used = {id(r) for o in resolved for r in o[6]}
         # closets the floor config leaves off the map
@@ -312,7 +321,6 @@ def emit_floor(fid, d, x0, y0, out_dir):
             # drawn as that rectangle (the notches are fixtures and door recesses); a round
             # room (the oval on the roof) as the ellipse through its outline; any other gets
             # the simplest corner fit that still covers it
-            from rooms import flatten_arcs
             ell = ellipse_of(u['polygon']) if len(u['polygon']) >= 8 else None
             e = Polygon(flatten_arcs(ell)).buffer(0) if ell else None
             iou_ell = e.intersection(g).area / e.union(g).area if e is not None and not e.is_empty else 0.0
@@ -340,6 +348,12 @@ def emit_floor(fid, d, x0, y0, out_dir):
             taken = taken.union(g)
             entries.append((3, None, f'room-{k}', 'service', poly, {'name': 'Room', 'label': '', 'tags': ['unnumbered']}))
         print(f'  floor {fid}: {k} unnumbered rooms')
+    if d.get('atrium_stairs'):  # the stairs are drawn: the atrium's own stairs icon would double them
+        for i, e in enumerate(entries):
+            if e[2] == 'atrium':
+                extra = {k: v for k, v in e[5].items() if k != 'icon'}
+                extra['tags'] = [t for t in extra.get('tags', []) if t != 'stairs']
+                entries[i] = (e[0], e[1], e[2], e[3], e[4], extra)
     n_walls, n_rooms, worst = align_walls(entries, d['outlines'])
     print(f'  floor {fid}: {n_walls} walls of {n_rooms} rooms turned parallel to their neighbours (largest turn {worst:.1f}°)')
     suited = mark_suites(entries, cfg)
@@ -359,6 +373,8 @@ def emit_floor(fid, d, x0, y0, out_dir):
     for _, w, rid, cat, poly, extra in entries:
         if extra.get('holes'):
             extra = {**extra, 'holes': [to_frame(h) for h in extra['holes']]}
+        if extra.get('arrow'):
+            extra = {**extra, 'arrow': to_frame(extra['arrow'])}
         lines.append(f"  [{ts_str(w) if w else 'undefined'}, {ts_str(rid)}, {ts_str(cat)}, {fmt_poly(to_frame(poly))}, {fmt_extra(extra)}],")
     lines.append('];')
     lines.append('')
@@ -582,7 +598,6 @@ def facade_direction(outlines, at, min_len=100.0):
     """Unit vector along the straight edge of the building outline nearest to a point: an edge
     of at least `min_len` (the chords of a flattened curve and the jogs are shorter)."""
     import numpy as np
-    from rooms import flatten_arcs
     best = None
     p = np.array(at, float)
     for o in outlines:
@@ -844,7 +859,6 @@ def mark_suites(entries, cfg):
     holes; the suite itself carries the 'suite' tag (drawn lighter). Returns the number of
     rooms taken in."""
     from shapely.geometry import Point, Polygon
-    from rooms import flatten_arcs
     n = 0
     for i, e in enumerate(entries):
         spec = cfg['suites'].get(e[2])
@@ -880,7 +894,6 @@ def snap_doors(doors, entries):
     suite's entrances sit on the suite as drawn. Returns the number moved."""
     import numpy as np
     from shapely.geometry import LineString, Point, Polygon
-    from rooms import flatten_arcs
     n = 0
     for dr in doors:
         rid = dr.get('snap')
@@ -951,7 +964,6 @@ def resolve_overlaps(entries):
     polygons cut."""
     from shapely.geometry import MultiPolygon, Polygon
     from shapely.strtree import STRtree
-    from rooms import flatten_arcs
 
     def geom(e):
         return Polygon(flatten_arcs(e[4]), [flatten_arcs(h) for h in e[5].get('holes', [])]).buffer(0)
@@ -971,6 +983,8 @@ def resolve_overlaps(entries):
                 if x.area < OVERLAP_MIN:
                     continue
                 a, b = entries[i], entries[j]
+                if 'atrium' in (a[2], b[2]) and (a[2].startswith('atrium-stair') or b[2].startswith('atrium-stair')):
+                    continue  # the stairs lie on the atrium by design; both are drawn whole
                 if a[0] != b[0]:
                     v = i if a[0] > b[0] else j
                 elif arcs[i] != arcs[j]:
@@ -1043,6 +1057,8 @@ def fmt_extra(extra):
     for k, v in extra.items():
         if k == 'holes':
             parts.append(f"{k}: [{', '.join(fmt_poly(h) for h in v)}]")
+        elif k == 'arrow':
+            parts.append(f'{k}: {fmt_poly(v)}')
         elif isinstance(v, list):
             parts.append(f"{k}: [{', '.join(ts_str(t) for t in v)}]")
         else:

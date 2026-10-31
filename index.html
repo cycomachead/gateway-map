@@ -56,9 +56,14 @@
     <dialog id="about" class="dialog" aria-labelledby="about-title">
       <h2 id="about-title" class="dialog__title">About Gateway Map</h2>
       <p>
-        An interactive map of the Gateway building at UC Berkeley, home of the College of Computing,
-        Data Science, and Society. Find rooms, labs, and faculty offices on every floor, and share a
-        link straight to a room.
+        An interactive map of the
+        <a href="https://cdss.berkeley.edu/gateway">Barbara and Gerson Bakar Gateway</a> building at
+        UC Berkeley, home of <a href="https://cdss.berkeley.edu">CDSS</a>. Click the ‘Info’ button
+        for more about the features of this site.
+      </p>
+      <p>
+        This site is tested against WCAG 2.2 AA standards. If you have a challenge accessing this
+        site, please write to <a href="mailto:ball@berkeley.edu">ball@berkeley.edu</a>.
       </p>
       <p>
         Made by <a href="https://mball.co" rel="author">Michael Ball</a>, with a healthy dose of
@@ -70,6 +75,7 @@
         <a href="https://github.com/cycomachead/gateway-map">Open an issue or a pull request on GitHub</a>.
       </p>
       <div class="dialog__actions">
+        <button type="button" class="btn" id="about-info">Info</button>
         <button type="button" class="btn" id="about-shortcuts">Keyboard shortcuts</button>
         <button type="button" class="btn" data-close>Close</button>
       </div>

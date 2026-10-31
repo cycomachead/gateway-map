@@ -293,9 +293,11 @@ FLOORS = {
               hand={  # 2405's front wall on the line of 2403's, its sides parallel (as 3405 above it)
                     '2405': [[519.1, 1388.4], [562.9, 1373.7], [569.8, 1431.8], [525.0, 1437.3]],'2310': [[1651.4, 1658.6], [1767.9, 1644.0], [1814.6, 1820.8], [1673.9, 1838.4]],
                     '2161': [(2128, 469), (2203, 452), (2255, 514), (2168, 594), (2132, 545)]},
-              atrium=(1460, 1260, 252, 152, -14)),
+              atrium=(1460, 1260, 252, 152, -14),
+              atrium_stairs=[dict(side='west', goes='up', to=3, top='north')]),
     '3': dict(pdf='3', label='3', level=3, named=CORES + NE_RESTROOMS + [COPY_ROOM('3')], manual=[EAST_STAIR] + SW_CORE_RESTROOMS,
-              box={'3131', '3184', '3192', '3322', '3340', '3406'}, asis={'3190'},
+              box={'3131', '3184', '3192', '3322', '3406'}, asis={'3190'}, desk_box={'3340', '3360'},
+              rename={'3397': 'ERSO IT HELP DESK'},  # the plan says IT Help Desk; it is ERSO's
               quad={'3130', '3161', '3219', '3350', '3355', '3375', '3431', '3447'},
               # the labs 3184/3192 are split by benches drawn as walls; 3310 opens onto 3340
               hand={  # 3112 reaches to 3114's wall; the partition between is casework
@@ -303,7 +305,8 @@ FLOORS = {
                     '3405': [[517.8, 1387.1], [563.5, 1372.1], [570.9, 1432.8], [524.1, 1438.6]],'3184': [(2424, 1100), (2560, 1240), (2474, 1320), (2340, 1175)],
                     '3192': [(2428, 1098), (2525, 1047), (2620, 1152), (2563, 1236)],
                     '3310': [[1650.0, 1650.0], [1770.0, 1650.0], [1818.0, 1824.0], [1670.6, 1827.1]]},
-              atrium=(1459.3, 1241.6, 186.6, 291.5, 73.1)),
+              atrium=(1459.3, 1241.6, 186.6, 291.5, 73.1),
+              atrium_stairs=[dict(side='west', goes='down', to=2, top='north'), dict(side='east', goes='up', to=4, top='south')]),
     # The labs 4131/4184/4192/4408/4322 are plain boxes on the plan (their internal lines are
     # benches); the social kitchens 4130 and 4350 are boxes with one curved wall, and the
     # meeting rooms 4355/4375 and the study room 4310 are rectangles with a pilaster, a
@@ -312,7 +315,11 @@ FLOORS = {
                     '4382': [[500.0, 1711.1], [461.1, 1715.9], [463.7, 1736.1], [502.4, 1731.4]],  # 4112 reaches to 4114; the partition the sheet draws between them is casework
                     '4112': [[1305.6, 753.4], [1232.2, 771.1], [1237.0, 826.5], [1317.3, 809.5]]},
               manual=[EAST_STAIR] + SW_CORE_RESTROOMS,
-              box={'4131', '4184', '4192', '4322', '4340', '4360', '4408'}, quad={'4130', '4350', '4355', '4375', '4310'}),
+              box={'4131', '4184', '4192', '4322', '4360', '4408'}, desk_box={'4340'}, quad={'4130', '4350', '4355', '4375', '4310'},
+              # the atrium is traced from its opening here; the east stair (down to 3) is found
+              # in floor 3's rail ellipse, which the stairs share
+              stair_frame=(1459.3, 1241.6, 186.6, 291.5, 73.1),
+              atrium_stairs=[dict(side='east', goes='down', to=3, top='south')]),
     # Floor 5 is set back: the indoor blocks stand on a paved roof terrace inside the parapet
     # (seeded on its pavers and walkways). The passage between the restroom blocks of the south
     # bar is sealed so the terrace does not run into the building. The oval is the atrium's
@@ -367,6 +374,9 @@ for f in FLOORS.values():
     f.setdefault('square', [])
     f.setdefault('suites', {})
     f.setdefault('asis', set())
+    f.setdefault('desk_box', set())
+    f.setdefault('atrium_stairs', [])
+    f.setdefault('stair_frame', None)
     f.setdefault('blank', [])
     f.setdefault('rename', {})
 
@@ -415,7 +425,7 @@ TITLE_FIXES = {
 ADD_ROOM = {'Focus', 'Huddle', 'Small Meeting', 'Medium Meeting', 'Large Meeting', 'Extra Large Meeting', 'Meeting', 'Lactation', 'Meditation', 'Green'}
 
 
-ACRONYMS = {'It': 'IT', 'Hci': 'HCI', 'Das': 'DAS', 'Mri': 'MRI', 'Ta': 'TA'}
+ACRONYMS = {'It': 'IT', 'Hci': 'HCI', 'Das': 'DAS', 'Mri': 'MRI', 'Ta': 'TA', 'Erso': 'ERSO'}
 
 
 def display_name(name: str, id_: str) -> str:

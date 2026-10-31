@@ -141,6 +141,10 @@ $('#about-shortcuts').addEventListener('click', () => {
   aboutDialog.close();
   help.toggle();
 });
+$('#about-info').addEventListener('click', () => {
+  aboutDialog.close();
+  openDialog(infoDialog);
+});
 
 const spaceElement = (id: string) => svg.querySelector<SVGGElement>(`[data-space-id="${CSS.escape(id)}"]`);
 

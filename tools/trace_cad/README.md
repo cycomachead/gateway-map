@@ -166,10 +166,27 @@ draws the trace over the simplified drawing, coloured by parity with the level f
      to their minimum-area bounding rectangle. An open area listed in `asis` (drawn as a few
      walls in the patch file, which the free space all but fills) is drawn exactly as its
      patch polygon, since a fitted rectangle would put a corner off the wall it was drawn on.
+     An open office in `desk_box` is the rectangle around its desks (the worksurfaces standing
+     in its patch area, not those of another area), in the frame of the desks' own direction,
+     widened 8 pt for the chairs: it stops short of the next office instead of cutting into it.
      A room with `guides` in the patch file (three points along its curved wall) is clipped to
      the circle through them. The social kitchens (a `SOCIAL KITCHEN` label on a long trace)
      have their parallel sides pulled in 2 pt and straightened and their curved ends fitted
      as arcs (`kitchen_shape`).
+   - A facade drawn in panels has a step of a point or two at every joint; `drop_jogs` replaces
+     an edge shorter than 4 pt between two stretches of one wall by its midpoint, which the
+     facet merge then drops, so the wall is one line.
+   - The stairs winding inside the atrium's rail (floors 2–4, `atrium_stairs` in the floor
+     config: side, up or down, to which floor, which end is the top) are traced from their
+     treads: the radial strokes 15–90 pt long between the opening and the rail that stand in a
+     row of parallel strokes, strokes on one line merged (the handrail cuts a tread in two).
+     Sorted around the atrium they fall into flights, a landing being a gap of more than two
+     treads; the stair is each flight's strip between the treads' inner and outer ends plus the
+     landings, and its centreline (the treads' midpoints, smoothed) is the arrow the map draws
+     along it, pointing the way the stair goes. The break lines on the lower floors give the
+     direction: the west stair rises from its south end (2 → 3), the east one from its north
+     end (3 → 4), one spiral. Floor 4 traces its atrium from the opening, so `stair_frame`
+     lends it floor 3's rail ellipse to find the treads in.
    - Labels whose fill still escapes into the corridor network are open areas: the unenclosed
      free space (on the furniture-free raster) is partitioned between them by geodesic
      distance, but each label's open area is only the *furnished* part of its cell, so the
@@ -260,7 +277,12 @@ draws the trace over the simplified drawing, coloured by parity with the level f
    the map draws lighter and dashed. Doors go out as `DoorSpec`s, the ones the patch file
    names flagged to be shown; a door the patch file puts on a room's edge (a fourth value,
    the room's id) is moved to the nearest point of that room's boundary and turned along it
-   (`snap_doors`), so a suite's entrances sit on the suite as drawn. Coordinates are PDF points of the upper-floor sheets,
+   (`snap_doors`), so a suite's entrances sit on the suite as drawn. A numbered room of
+   10 000 pt² or more whose name says more than its colour (not an office, open office or
+   piazza) carries the name as a `caption`, which the map draws small under the number; copy
+   rooms carry a printer icon. The atrium stairs go out as circulation spaces with an `arrow`
+   (the way they go), labelled Up or Down at the arrow's head; the atrium keeps its shape
+   under them. Coordinates are PDF points of the upper-floor sheets,
    shifted so the building starts near the origin (`frame.ts`); the frame is kept across reruns
    while the building still fits in it (`--reframe` recomputes it).
 

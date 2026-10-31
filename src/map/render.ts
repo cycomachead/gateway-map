@@ -36,9 +36,30 @@ const ICON_PATHS: Record<SpaceIcon, string> = {
     'M17 2.2a1.9 1.9 0 1 1 0 3.8 1.9 1.9 0 0 1 0-3.8zM14.8 7h4.4l1.7 5.9h-1.5l-.7-2.6 1.5 5.1h-1.9V23h-1.6v-4.6h-.5V23h-1.6v-4.6h-1.9l1.5-5.1-.7 2.6h-1.5z',
   // a flight of steps climbing to the right
   stairs: 'M2 22V17h5v-5h5V7h5V2h5v20z',
+  // a printer: the body with a sheet in its tray and one coming out on top
+  printer: 'M19 8H5c-1.66 0-3 1.34-3 3v6h4v4h12v-4h4v-6c0-1.66-1.34-3-3-3zm-3 11H8v-5h8v5zm3-7c-.55 0-1-.45-1-1s.45-1 1-1 1 .45 1 1-.45 1-1 1zm-1-9H6v4h12V3z',
 };
 
 const ICON_SIZE = 16;
+
+/** Words packed onto lines of at most `max` characters (a long word stands alone). */
+export function wrapWords(text: string, max: number): string[] {
+  const lines: string[] = [];
+  for (const word of text.split(/\s+/).filter(Boolean)) {
+    const last = lines[lines.length - 1];
+    if (last !== undefined && last.length + 1 + word.length <= max) lines[lines.length - 1] = `${last} ${word}`;
+    else lines.push(word);
+  }
+  return lines;
+}
+
+/** Where a space with an arrow carries its label: just past the arrow's head, along its last stretch. */
+function arrowHead(arrow: Point[]): Point {
+  const head = arrow[arrow.length - 1];
+  const prev = arrow[arrow.length - 2] ?? head;
+  const len = Math.hypot(head.x - prev.x, head.y - prev.y) || 1;
+  return { x: head.x + ((head.x - prev.x) / len) * 12, y: head.y + ((head.y - prev.y) / len) * 12 };
+}
 
 function renderSpace(space: Space): SVGGElement {
   const g = el('g', {
@@ -51,12 +72,18 @@ function renderSpace(space: Space): SVGGElement {
   const d = [space.polygon, ...(space.holes ?? [])].map((p) => toPath(p)).join(' ');
   g.appendChild(el('path', { d, class: 'space__shape' }));
 
-  const c = labelPoint(space.polygon);
+  if (space.arrow) g.classList.add('space--stairway'); // a stair drawn along its run reads as a solid band
+  const c = space.arrow ? arrowHead(space.arrow) : labelPoint(space.polygon);
+  if (space.arrow && space.arrow.length >= 2) {
+    // the way a stair goes, drawn along it and ending in an arrowhead (see the marker in renderFloor)
+    const d = space.arrow.map((p, i) => `${i ? 'L' : 'M'}${p.x} ${p.y}`).join('');
+    g.appendChild(el('path', { d, class: 'space__arrow', 'marker-end': 'url(#arrowhead)' }));
+  }
   // A pictogram (the restroom signs, a stair) sits above the text, the two centred as one block.
-  // A stair too small for both (a landing drawn on its own) keeps just its label.
+  // A stair or copy room too small for both (a landing drawn on its own) keeps just its label.
   const box = extent(space.polygon);
   const fits = box.width >= 2 * ICON_SIZE && box.height >= 3 * ICON_SIZE;
-  const icon = space.icon && (space.icon !== 'stairs' || fits) ? space.icon : undefined;
+  const icon = space.icon && ((space.icon !== 'stairs' && space.icon !== 'printer') || fits) ? space.icon : undefined;
   const iconHeight = icon ? ICON_SIZE + 2 : 0;
   if (icon) {
     g.appendChild(
@@ -77,7 +104,7 @@ function renderSpace(space: Space): SVGGElement {
   // The label's lines (a restroom's "Gender / Neutral" is wrapped, and then drawn small
   // throughout), then each occupant's name wrapped onto short lines, centred as one block.
   const [title, ...more] = (space.label ?? space.name).split('\n');
-  const lines = [...more, ...(space.occupants ?? []).flatMap(nameLines)];
+  const lines = [...more, ...(space.caption ? wrapWords(space.caption, 22) : []), ...(space.occupants ?? []).flatMap(nameLines)];
   if (!lines.length) {
     label.textContent = title;
   } else {
@@ -199,6 +226,12 @@ function swingPath(door: Door, size: number): string {
 /** Builds the SVG subtree for one floor. Caller decides where to mount it. */
 export function renderFloor(building: Building, floor: Floor): SVGGElement {
   const root = el('g', { class: 'floor', 'data-floor-id': floor.id });
+  // the arrowhead the stairs' direction arrows end in
+  const defs = el('defs');
+  const marker = el('marker', { id: 'arrowhead', viewBox: '0 0 10 10', refX: '7', refY: '5', markerWidth: '5', markerHeight: '5', orient: 'auto' });
+  marker.appendChild(el('path', { d: 'M0 0L10 5L0 10z', class: 'arrowhead' }));
+  defs.appendChild(marker);
+  root.appendChild(defs);
   for (const street of building.streets ?? []) root.appendChild(renderStreet(street));
   root.appendChild(el('path', { d: toPath(floor.outline), class: 'floor__outline' }));
   for (const island of floor.islands ?? []) root.appendChild(el('path', { d: toPath(island), class: 'floor__outline' }));
