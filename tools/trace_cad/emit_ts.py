@@ -204,8 +204,8 @@ def emit_floor(fid, d, x0, y0, out_dir):
         entries.append((0 if r['kind'] == 'room' else 2, w, rid, cat, r['polygon'], extra))
     for st in d.get('atrium_stairs', []):  # the stairs winding inside the atrium's rail, with the way they go
         up = st['goes'] == 'up'
-        extra = {'name': f"Atrium Stair {'up' if up else 'down'} to Floor {st['to']}", 'label': 'Up' if up else 'Down',
-                 'tags': ['atrium', 'stairs', 'up' if up else 'down'], 'arrow': st['arrow']}
+        extra = with_icon({'name': f"Atrium Stair {'up' if up else 'down'} to Floor {st['to']}", 'label': 'Up' if up else 'Down',
+                           'tags': ['atrium', 'stairs', 'up' if up else 'down'], 'arrow': st['arrow']})
         entries.append((0, None, st['id'], 'circulation', st['polygon'], extra))
     placed = [Polygon(xy(r['polygon']), [xy(h) for h in r.get('holes', [])]).buffer(0) for r in d['rooms'] if r.get('polygon')]
     resolved = []

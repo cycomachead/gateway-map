@@ -318,13 +318,17 @@ the counts on any floor.
   between the opening and the rail standing in rows of parallel strokes; a tread the handrail
   cuts in two, or drawn with its nosing, is merged along its line. Sorted around the atrium
   the treads fall into flights (a landing is a gap of more than two treads), and strokes a
-  long way off are not the stair's. The stair is the flights' strips plus the landings; the
-  arrow along it is the treads' midpoints smoothed. The direction is read from the break
-  lines on the lower floors (the floor below shows the stair cut where it passes the ceiling
-  plane): the west stair rises from its south end, the east one from its north end. The map
-  draws each as a solid band over the atrium with an arrow and an Up/Down label at its head;
-  the atrium is exempt from the overlap pass under its stairs. Floor 4 traces its atrium
-  from the opening, so `stair_frame` gives it floor 3's rail ellipse for the detection.
+  long way off are not the stair's. The stair follows the atrium: the band of the ellipse
+  between the treads' median inner and outer radii from the first tread to the last (the
+  straight end flights are drawn on the curve too), and the arrow runs along the ellipse
+  between them. The break lines misled on direction: Michael confirmed the west stair rises
+  from its north end and the east one from its south end. The map draws each as a solid band
+  over the atrium with a stairs icon, an arrow and an Up/Down label at the arrow's head; the
+  atrium is exempt from the overlap pass under its stairs. Floor 4 traces its atrium from the
+  opening, so `stair_frame` gives it floor 3's rail ellipse for the detection.
+- **The second Northeast stair.** East of the Northeast elevators, south of the men's
+  restroom (floor 1) and of 2133 (floor 2), a stair traces only as slivers; it is a `manual`
+  room drawn from its walls on both floors (`NE_STAIR_EAST`).
 - **Open offices around their desks.** `desk_box`: the rectangle around the worksurfaces
   standing in the patch area (not another area's), in the desks' own frame, 8 pt out for
   the chairs (3360, 3340, 4340). 3340 no longer cuts into 3330.

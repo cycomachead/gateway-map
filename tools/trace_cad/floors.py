@@ -114,6 +114,12 @@ F5_RESTROOMS = [(1305, 1700, 'men-restroom', 'service', "Men's Restroom", "Men's
 # their walls), so the three rooms are drawn by hand in a frame along the block (7° off the
 # sheet): the women's upper band with its stalls, the single-user room in the middle and the
 # men's below. Which multi-stall room is the men's is not legible on the plan.
+# The second Northeast stair stands east of the elevators, south of the men's restroom (floor 1)
+# and of 2133 (floor 2), in the wing's 12° frame; its treads trace as slivers, so it is drawn by
+# hand from its walls on both floors (floor 1's flight starts further west, with its landing)
+NE_STAIR_EAST = lambda poly: ('ne-stair-east', 'circulation', 'Northeast Stair', 'Stair', ['stairs'], poly)
+NE_STAIR_EAST_F1 = NE_STAIR_EAST([[1574.1, 912.4], [1734.5, 878.3], [1749.4, 948.7], [1589.0, 982.8]])
+NE_STAIR_EAST_F2 = NE_STAIR_EAST([[1613.2, 904.1], [1731.6, 878.9], [1746.5, 949.3], [1628.1, 974.5]])
 SW_BLOCK_RESTROOMS = [
     ('sw-block-womens', 'service', *WOMENS, [[410.4, 1312.8], [576.2, 1292.5], [584.7, 1361.9], [504.3, 1371.8], [500.4, 1340.0], [415.0, 1350.5]]),
     ('sw-block-neutral', 'service', *NEUTRAL, [[450.5, 1352.2], [498.1, 1346.4], [504.2, 1396.0], [456.6, 1401.8]]),
@@ -255,7 +261,7 @@ FLOORS = {
     '1': dict(pdf='1', label='1', level=1, exterior=[(960, 1600)], exits=True, unnamed=2500, atrium=(1499, 1219, 128, 185, 80.5),
               # a sliver on the stair landing by the Northeast elevators, a closet by the Northeast core
               blank=[(1610, 959), (2266, 826)],
-              manual=[EAST_STAIR, *SW_BLOCK_RESTROOMS],
+              manual=[EAST_STAIR, NE_STAIR_EAST_F1, *SW_BLOCK_RESTROOMS],
               # the plan's "Project Rm." 1456 is the TA printer room; 1110 (an "open office" on
               # the plan) is a four-walled reservable meeting room like 1110A/B beside it
               rename={'1456': 'TA PRINTER ROOM', '1110': 'MEETING'},
@@ -287,14 +293,14 @@ FLOORS = {
     # Floors 2 and 3 follow floor 4 (below): the research labs are boxes, the kitchens and
     # meeting rooms with a pilaster or a curved wall are four-cornered. Stairs wind down inside
     # the atrium's rail on these floors, so the rail's ellipse is given.
-    '2': dict(pdf='2', label='2', level=2, named=CORES + NE_RESTROOMS + [COPY_ROOM('2')], manual=[EAST_STAIR] + SW_CORE_RESTROOMS,
+    '2': dict(pdf='2', label='2', level=2, named=CORES + NE_RESTROOMS + [COPY_ROOM('2')], manual=[EAST_STAIR, NE_STAIR_EAST_F2] + SW_CORE_RESTROOMS,
               box={'2184', '2190', '2192', '2322', '2360', '2404', '2408'},
               quad={'2130', '2133', '2219', '2228', '2345', '2355', '2361', '2389', '2431', '2445'},
               hand={  # 2405's front wall on the line of 2403's, its sides parallel (as 3405 above it)
                     '2405': [[519.1, 1388.4], [562.9, 1373.7], [569.8, 1431.8], [525.0, 1437.3]],'2310': [[1651.4, 1658.6], [1767.9, 1644.0], [1814.6, 1820.8], [1673.9, 1838.4]],
                     '2161': [(2128, 469), (2203, 452), (2255, 514), (2168, 594), (2132, 545)]},
               atrium=(1460, 1260, 252, 152, -14),
-              atrium_stairs=[dict(side='west', goes='up', to=3, top='north')]),
+              atrium_stairs=[dict(side='west', goes='up', to=3, top='south')]),
     '3': dict(pdf='3', label='3', level=3, named=CORES + NE_RESTROOMS + [COPY_ROOM('3')], manual=[EAST_STAIR] + SW_CORE_RESTROOMS,
               box={'3131', '3184', '3192', '3322', '3406'}, asis={'3190'}, desk_box={'3340', '3360'},
               rename={'3397': 'ERSO IT HELP DESK'},  # the plan says IT Help Desk; it is ERSO's
@@ -306,7 +312,7 @@ FLOORS = {
                     '3192': [(2428, 1098), (2525, 1047), (2620, 1152), (2563, 1236)],
                     '3310': [[1650.0, 1650.0], [1770.0, 1650.0], [1818.0, 1824.0], [1670.6, 1827.1]]},
               atrium=(1459.3, 1241.6, 186.6, 291.5, 73.1),
-              atrium_stairs=[dict(side='west', goes='down', to=2, top='north'), dict(side='east', goes='up', to=4, top='south')]),
+              atrium_stairs=[dict(side='west', goes='down', to=2, top='south'), dict(side='east', goes='up', to=4, top='north')]),
     # The labs 4131/4184/4192/4408/4322 are plain boxes on the plan (their internal lines are
     # benches); the social kitchens 4130 and 4350 are boxes with one curved wall, and the
     # meeting rooms 4355/4375 and the study room 4310 are rectangles with a pilaster, a
@@ -319,7 +325,7 @@ FLOORS = {
               # the atrium is traced from its opening here; the east stair (down to 3) is found
               # in floor 3's rail ellipse, which the stairs share
               stair_frame=(1459.3, 1241.6, 186.6, 291.5, 73.1),
-              atrium_stairs=[dict(side='east', goes='down', to=3, top='south')]),
+              atrium_stairs=[dict(side='east', goes='down', to=3, top='north')]),
     # Floor 5 is set back: the indoor blocks stand on a paved roof terrace inside the parapet
     # (seeded on its pavers and walkways). The passage between the restroom blocks of the south
     # bar is sealed so the terrace does not run into the building. The oval is the atrium's

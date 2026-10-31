@@ -662,23 +662,27 @@ def atrium_stairs(geom, cfg, scale):
         chains.append(chain)
         flights = max(chains, key=lambda ch: sum(len(fl) for fl in ch))
         cl = [q for fl in flights for q in fl]
-        # the band: each flight's strip between its treads' outer and inner ends, and the
-        # landings between flights, spanned from one flight's last tread to the next one's first
-        pieces = []
-        for fl in flights:
-            strip = Polygon([q['out'] for q in fl] + [q['in'] for q in fl][::-1]) if len(fl) >= 2 else None
-            if strip is None or not strip.is_valid or strip.is_empty:
-                strip = MultiPoint([q['in'] for q in fl] + [q['out'] for q in fl]).convex_hull.buffer(0.5 * scale)
-            pieces.append(strip)
-        for f0, f1 in zip(flights, flights[1:]):
-            pieces.append(MultiPoint([f0[-1]['in'], f0[-1]['out'], f1[0]['in'], f1[0]['out']]).convex_hull.buffer(0.5 * scale))
-        band = biggest(unary_union(pieces).buffer(0))
-        g = Polygon(band.exterior)
-        poly = ring(g.simplify(1.5 * scale), arcs=True, tol=4, dev=12, min_iou=0.95)
-        flights = len(flights)
-        mids = [mid(q) for q in cl]
-        smooth = [mids[0]] + [tuple(np.mean(mids[k - 1:k + 2], axis=0)) for k in range(1, len(mids) - 1)] + [mids[-1]]
-        line = LineString(smooth).simplify(2 * scale)
+        # the band follows the atrium: the ellipse scaled to the treads' inner and outer ends
+        # (their median radii), from the first tread's angle to the last one's, cut square at
+        # both ends; the straight flights at the ends are drawn on that curve too
+        r_in = float(np.median([q['rin'] for q in cl]))
+        r_out = float(np.median([q['rout'] for q in cl]))
+        a0, a1 = cl[0]['ang'], cl[-1]['ang']
+        if a1 < a0:
+            a1 += 360
+
+        def on_ellipse(deg, r):
+            th = math.radians(deg)
+            x, y = r * a * math.cos(th), r * b * math.sin(th)
+            return (cx + x * c - y * s, cy + x * s + y * c)
+
+        n = max(12, int((a1 - a0) / 3))
+        outer = [on_ellipse(a0 + (a1 - a0) * k / n, r_out) for k in range(n + 1)]
+        inner = [on_ellipse(a0 + (a1 - a0) * k / n, r_in) for k in range(n + 1)]
+        g = Polygon(outer + inner[::-1]).buffer(0)
+        poly = ring(g, arcs=True, tol=2, dev=6, min_iou=0.98)
+        flights = 1 + sum(1 for q0, q1 in zip(cl, cl[1:]) if math.dist(mid(q0), mid(q1)) > 2.5 * pitch + 4 * scale)
+        line = LineString([on_ellipse(a0 + (a1 - a0) * k / n, (r_in + r_out) / 2) for k in range(n + 1)]).simplify(1.0 * scale)
         if line.length > 24 * scale:
             from shapely.ops import substring
             line = substring(line, 8 * scale, line.length - 8 * scale)

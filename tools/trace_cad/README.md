@@ -181,12 +181,12 @@ draws the trace over the simplified drawing, coloured by parity with the level f
      treads: the radial strokes 15–90 pt long between the opening and the rail that stand in a
      row of parallel strokes, strokes on one line merged (the handrail cuts a tread in two).
      Sorted around the atrium they fall into flights, a landing being a gap of more than two
-     treads; the stair is each flight's strip between the treads' inner and outer ends plus the
-     landings, and its centreline (the treads' midpoints, smoothed) is the arrow the map draws
-     along it, pointing the way the stair goes. The break lines on the lower floors give the
-     direction: the west stair rises from its south end (2 → 3), the east one from its north
-     end (3 → 4), one spiral. Floor 4 traces its atrium from the opening, so `stair_frame`
-     lends it floor 3's rail ellipse to find the treads in.
+     treads. The stair follows the atrium: the band of the ellipse between the treads' median
+     inner and outer radii, from the first tread's angle to the last one's, and its centreline
+     on the ellipse between them is the arrow the map draws along it, pointing the way the
+     stair goes (the west stair rises from its north end, 2 → 3; the east one from its south
+     end, 3 → 4). Floor 4 traces its atrium from the opening, so `stair_frame` lends it floor
+     3's rail ellipse to find the treads in.
    - Labels whose fill still escapes into the corridor network are open areas: the unenclosed
      free space (on the furniture-free raster) is partitioned between them by geodesic
      distance, but each label's open area is only the *furnished* part of its cell, so the
