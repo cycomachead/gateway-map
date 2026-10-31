@@ -279,8 +279,8 @@ draws the trace over the simplified drawing, coloured by parity with the level f
    the room's id) is moved to the nearest point of that room's boundary and turned along it
    (`snap_doors`), so a suite's entrances sit on the suite as drawn. A numbered room of
    10 000 pt² or more whose name says more than its colour (not an office, open office or
-   piazza) carries the name as a `caption`, which the map draws small under the number; copy
-   rooms carry a printer icon. The atrium stairs go out as circulation spaces with an `arrow`
+   piazza) carries the name as a `caption`, which the map draws small under the number; every
+   room of the copy category carries a printer icon, whatever the plan calls it. The atrium stairs go out as circulation spaces with an `arrow`
    (the way they go), labelled Up or Down at the arrow's head; the atrium keeps its shape
    under them. Coordinates are PDF points of the upper-floor sheets,
    shifted so the building starts near the origin (`frame.ts`); the frame is kept across reruns

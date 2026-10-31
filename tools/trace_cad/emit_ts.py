@@ -201,6 +201,9 @@ def emit_floor(fid, d, x0, y0, out_dir):
             tags.append('open plan')
         if tags:
             extra['tags'] = tags
+        extra = with_icon(extra)
+        if cat == 'copy':  # every copy room carries the printer, whatever the plan calls it
+            extra.setdefault('icon', 'printer')
         entries.append((0 if r['kind'] == 'room' else 2, w, rid, cat, r['polygon'], extra))
     for st in d.get('atrium_stairs', []):  # the stairs winding inside the atrium's rail, with the way they go
         up = st['goes'] == 'up'
