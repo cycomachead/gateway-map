@@ -298,3 +298,15 @@ the counts on any floor.
   the hall partition (the marked point lies in the open hall).
 - **Still open.** 2004 and the atrium still meet by 7 pt² (both arcs); the stall rows of the
   women's restrooms on floors 2 and 4 trace as their own regions.
+
+## Findings from the sixth review (2026-10-30)
+
+- **Good enough beats exact.** The bar for the map is to look good and be usable: shapes
+  accurate, not every detail. 2004 stays as it is (twelve vertices, two arcs) though fewer
+  lines would be nicer.
+- **One shape for a repeated core.** The Southwest core's restrooms traced differently on
+  each of floors 2–4 (the women's room without its stall row, or with the vestibule beside
+  it; the single-user room with the closet above it), so they are `manual` rooms drawn once
+  from the walls and shared by the three floors (`SW_CORE_RESTROOMS`). Floor 1 traces the
+  full room on its own and confirmed the rectangle.
+- **Hidden on floor 5.** Three closets and shafts of the south bar are `blank` points.

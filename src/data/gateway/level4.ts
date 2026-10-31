@@ -175,10 +175,10 @@ export const rooms: RoomSpec[] = [
   [undefined, 'atrium', 'circulation', [[1428.4, 918.3, 0.1485], [1566.2, 809.4, 0.1815], [1572.5, 746.2, 0.2048], [1515.0, 704.5, 0.1349], [1348.7, 729.4, 0.1484], [1211.0, 838.3, 0.1815], [1204.7, 901.4, 0.2048], [1262.2, 943.2, 0.1350]], { name: 'Atrium', label: 'Atrium', tags: ['atrium', 'stairs', 'open to below'], icon: 'stairs' }],
   ['Northeast', 'ne-restroom', 'service', [[1276.6, 499.5], [1331.6, 487.8], [1331.9, 489.5], [1337.6, 488.2], [1337.3, 486.6], [1426.9, 467.6], [1407.9, 378.4], [1240.2, 413.4], [1259.7, 504.8], [1276.9, 501.1]], { name: 'Men\'s Restroom', label: 'Men\'s Restroom', tags: ['restroom', 'men'], icon: 'man' }],
   ['Northeast', 'ne-restroom-2', 'service', [[1201.3, 424.1], [1210.4, 472.7], [1241.1, 466.9], [1231.9, 417.7]], { name: 'Gender Neutral Restroom', label: 'Gender\nNeutral', tags: ['restroom', 'all gender', 'gender neutral'], icon: 'all-gender' }],
-  ['Southwest', 'sw-restroom', 'service', [[1476.2, 1136.7], [1483.6, 1196.8], [1639.5, 1177.6], [1632.3, 1119.5]], { name: 'Women\'s Restroom', label: 'Women\'s Restroom', tags: ['restroom', 'women'], icon: 'woman' }],
-  ['Southwest', 'sw-restroom-2', 'service', [[1600.4, 1120.7], [1639.5, 1116.4], [1639.7, 1117.4], [1679.3, 1113.0], [1670.0, 1036.7], [1591.3, 1046.3]], { name: 'Gender Neutral Restroom', label: 'Gender\nNeutral', tags: ['restroom', 'all gender', 'gender neutral'], icon: 'all-gender' }],
   ['Southwest', '4401', 'copy', [[628.7, 976.0], [608.6, 917.6], [565.5, 931.3], [572.5, 984.3]], { name: 'Copy Room 4401', label: '4401', tags: ['copy', 'printer'] }],
   [undefined, 'east-stair', 'circulation', [[2437.3, 1092.1], [2521.3, 1207.7], [2582.4, 1177.7], [2473.9, 1059.4]], { name: 'East Stair', label: 'Stair', tags: ['stairs'], icon: 'stairs' }],
+  [undefined, 'sw-restroom', 'service', [[1634.4, 1116.5], [1475.3, 1136.5], [1486.9, 1231.9], [1645.8, 1212.1]], { name: 'Women\'s Restroom', label: 'Women\'s Restroom', tags: ['restroom', 'women'], icon: 'woman' }],
+  [undefined, 'sw-restroom-2', 'service', [[1628.0, 1064.1], [1592.1, 1068.9], [1597.9, 1118.8], [1634.0, 1114.2]], { name: 'Gender Neutral Restroom', label: 'Gender\nNeutral', tags: ['restroom', 'all gender', 'gender neutral'], icon: 'all-gender' }],
 ];
 
 export const pois: PoiSpec[] = [

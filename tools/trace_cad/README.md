@@ -221,7 +221,8 @@ draws the trace over the simplified drawing, coloured by parity with the level f
      the floor's `hand`, from wall coordinates read off the sheet.
 3. `floors.py` — per-floor configuration: label style, hand seeds, gap-sealing strokes, named
    regions (identified by a point inside them), hand polygons, `manual` rooms drawn whole (a
-   storage room the plan leaves blank, a suite's hall), boxed rooms, renamed rooms
+   storage room the plan leaves blank, a suite's hall, the Southwest core's restrooms, which
+   are one shape shared by floors 2–4), boxed rooms, renamed rooms
    (`rename`, for a room whose use differs from the plan's label), `suites`, and the similarity transform
    that registers the Lower Level sheet (drawn at 1/8" = 1' and rotated) onto the upper-floor
    sheets; it was fitted on the six elevator shafts and has a residual below 0.1 pt. Also maps
